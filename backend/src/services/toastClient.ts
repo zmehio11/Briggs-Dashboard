@@ -36,10 +36,8 @@ async function getToken(): Promise<string> {
     userAccessType: "TOAST_MACHINE_CLIENT",
   });
 
-  // VERIFY: exact response shape (field names below are the commonly
-  // documented ones — token.accessToken + token.expiresIn seconds).
-  const accessToken: string = data?.token?.accessToken;
-  const expiresInSec: number = data?.token?.expiresIn ?? 3600;
+  const accessToken: string = data?.accessToken;
+  const expiresInSec: number = data?.expiresIn ?? 3600;
   if (!accessToken) throw new Error("Toast auth response missing access token");
 
   cachedToken = { token: accessToken, expiresAt: Date.now() + expiresInSec * 1000 };
