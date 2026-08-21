@@ -2,18 +2,19 @@ import axios from "axios";
 import { env } from "../lib/env.js";
 
 /**
- * MarginEdge client — pulls cost-of-sales (COGS) totals by category for one
- * business date.
+ * MarginEdge client — pulls cost-of-sales (COGS) totals for one business date.
  *
- * VERIFY before going live, against your MarginEdge partner API docs:
- * - MarginEdge's core data is invoices (from vendors) coded to GL
- *   categories, not a "daily COGS" figure directly — COGS for a given day
- *   is usually derived either from invoice date, from a theoretical usage
- *   feed, or from period-end inventory counts. Confirm with MarginEdge
- *   which of these your account actually has API access to, since it
- *   changes how "cost of sales" should be interpreted here (invoiced cost
- *   vs. theoretical/usage-based cost vs. actual-with-inventory-adjustment).
- * - Auth scheme and base URL/version.
+ * Verified against developer.marginedge.com's API reference:
+ * - Base URL is https://api.marginedge.com/public (the plain api.marginedge.com
+ *   host 404s/403s).
+ * - Auth header is `X-Api-Key`, not `Authorization: Bearer`.
+ * - "Orders" is MarginEdge's term for vendor invoices. GET /orders takes
+ *   restaurantUnitId + startDate/endDate and returns one row per invoice
+ *   with an order-level total, filtered by createdDate (the date the
+ *   invoice was uploaded/processed) — not invoiceDate. There's no
+ *   line-item category breakdown at this list level; that would require an
+ *   additional GET /orders/:orderId call per order, which isn't worth the
+ *   request volume just to feed a single COGS-% metric.
  */
 
 export interface DailyCogsResult {
@@ -22,33 +23,21 @@ export interface DailyCogsResult {
 }
 
 export async function fetchDailyCogs(businessDate: string): Promise<DailyCogsResult> {
-  const { data } = await axios.get(
-    `${env.marginEdge.baseUrl}/api/v2/restaurants/${env.marginEdge.restaurantId}/invoices`,
-    {
-      headers: { Authorization: `Bearer ${env.marginEdge.apiKey}` },
-      params: { date: businessDate },
-    }
-  );
+  const { data } = await axios.get(`${env.marginEdge.baseUrl}/orders`, {
+    headers: { "X-Api-Key": env.marginEdge.apiKey },
+    params: {
+      restaurantUnitId: env.marginEdge.restaurantId,
+      startDate: businessDate,
+      endDate: businessDate,
+    },
+  });
 
-  const invoices: any[] = Array.isArray(data) ? data : (data?.invoices ?? []);
-  const byCategory = new Map<string, number>();
-
-  for (const invoice of invoices) {
-    // VERIFY field names — this assumes each invoice has line items coded
-    // to a GL category (food / beverage / paper / other).
-    for (const line of invoice.lineItems ?? []) {
-      const category: string = (line.category ?? "other").toLowerCase();
-      const amount: number = line.amount ?? 0;
-      byCategory.set(category, (byCategory.get(category) ?? 0) + amount);
-    }
-  }
+  const orders: any[] = data?.orders ?? [];
+  const total = orders.reduce((sum: number, order: any) => sum + (order.orderTotal ?? 0), 0);
 
   return {
     businessDate,
-    byCategory: Array.from(byCategory.entries()).map(([category, amount]) => ({
-      category,
-      amount: round2(amount),
-    })),
+    byCategory: [{ category: "food", amount: round2(total) }],
   };
 }
 

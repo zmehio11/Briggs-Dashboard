@@ -32,6 +32,6 @@ export const env = {
   marginEdge: {
     apiKey: process.env.MARGIN_EDGE_API_KEY ?? "",
     restaurantId: process.env.MARGIN_EDGE_RESTAURANT_ID ?? "",
-    baseUrl: process.env.MARGIN_EDGE_API_BASE_URL ?? "https://api.marginedge.com",
+    baseUrl: process.env.MARGIN_EDGE_API_BASE_URL ?? "https://api.marginedge.com/public",
   },
 };
