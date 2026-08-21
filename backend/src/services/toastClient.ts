@@ -36,8 +36,11 @@ async function getToken(): Promise<string> {
     userAccessType: "TOAST_MACHINE_CLIENT",
   });
 
-  const accessToken: string = data?.accessToken;
-  const expiresInSec: number = data?.expiresIn ?? 3600;
+  // Verified against a live response: the token is nested under `token`,
+  // not top-level (doc.toasttab.com's authentication page describes an
+  // older/different shape than what this account's API actually returns).
+  const accessToken: string = data?.token?.accessToken;
+  const expiresInSec: number = data?.token?.expiresIn ?? 3600;
   if (!accessToken) throw new Error("Toast auth response missing access token");
 
   cachedToken = { token: accessToken, expiresAt: Date.now() + expiresInSec * 1000 };
