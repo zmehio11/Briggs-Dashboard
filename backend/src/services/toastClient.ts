@@ -4,19 +4,15 @@ import { env } from "../lib/env.js";
 /**
  * Toast POS client — pulls daily sales totals for one business date.
  *
- * VERIFY before going live:
- * - Auth: Toast's standard external-API auth is a POST to
- *   `${baseUrl}/authentication/v1/authentication/login` with
- *   { clientId, clientSecret, userAccessType: "TOAST_MACHINE_CLIENT" },
- *   returning a bearer token. Confirm this against your Toast dev portal —
- *   Toast has changed auth flows across API generations before.
+ * Verified against this account's live API:
+ * - Auth: POST to `${baseUrl}/authentication/v1/authentication/login` with
+ *   { clientId, clientSecret, userAccessType: "TOAST_MACHINE_CLIENT" }; the
+ *   token comes back nested under a top-level `token` object.
  * - Every request needs the `Toast-Restaurant-External-ID` header set to
  *   your restaurant's GUID (from the Toast back office, not the location name).
- * - Sales totals: the cleanest source is usually the Orders API
- *   (`/orders/v2/orders?businessDate=YYYYMMDD`), summed client-side, since
- *   Toast doesn't expose a single "daily sales summary" endpoint in all API
- *   tiers. If your account has access to it, the reporting/analytics export
- *   may be more efficient than paging through orders for high-volume days.
+ * - `GET /orders/v2/orders?businessDate=YYYYMMDD` only returns an array of
+ *   order GUIDs, not full order objects — each order's checks/amounts
+ *   require a separate `GET /orders/v2/orders/{guid}` call.
  */
 
 interface ToastToken {
@@ -55,25 +51,29 @@ export interface DailySalesResult {
   orderCount: number;
 }
 
+function authHeaders(token: string) {
+  return {
+    Authorization: `Bearer ${token}`,
+    "Toast-Restaurant-External-ID": env.toast.restaurantGuid,
+  };
+}
+
 export async function fetchDailySales(businessDate: string): Promise<DailySalesResult> {
   const token = await getToken();
   const yyyymmdd = businessDate.replace(/-/g, "");
 
-  const orders: any[] = [];
+  const orderGuids: string[] = [];
   let page = 1;
   const pageSize = 100;
 
   // Toast paginates orders; loop until a short page signals we're done.
   while (true) {
     const { data } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Toast-Restaurant-External-ID": env.toast.restaurantGuid,
-      },
+      headers: authHeaders(token),
       params: { businessDate: yyyymmdd, page, pageSize },
     });
-    const batch: any[] = Array.isArray(data) ? data : (data?.orders ?? []);
-    orders.push(...batch);
+    const batch: string[] = Array.isArray(data) ? data : (data?.orders ?? []);
+    orderGuids.push(...batch);
     if (batch.length < pageSize) break;
     page += 1;
   }
@@ -81,12 +81,14 @@ export async function fetchDailySales(businessDate: string): Promise<DailySalesR
   let grossSales = 0;
   let netSales = 0;
   let discounts = 0;
+  let orderCount = 0;
 
-  for (const order of orders) {
+  for (const guid of orderGuids) {
+    const { data: order } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders/${guid}`, {
+      headers: authHeaders(token),
+    });
     if (order.voided) continue;
-    // VERIFY: field names on the order/check payload — this assumes each
-    // order has one or more `checks[]`, each with `totalAmount`,
-    // `amount` (pre-tax/pre-discount), and `appliedDiscounts[]`.
+    orderCount += 1;
     for (const check of order.checks ?? []) {
       const checkDiscounts = (check.appliedDiscounts ?? []).reduce(
         (sum: number, d: any) => sum + (d.discountAmount ?? 0),
@@ -103,7 +105,7 @@ export async function fetchDailySales(businessDate: string): Promise<DailySalesR
     grossSales: round2(grossSales),
     netSales: round2(netSales),
     discounts: round2(discounts),
-    orderCount: orders.length,
+    orderCount,
   };
 }
 
