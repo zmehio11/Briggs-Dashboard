@@ -2,6 +2,7 @@ interface Props {
   label: string;
   value: number | null; // percentage, e.g. 32.4
   target: number; // target ceiling percentage
+  targetSource?: "budget" | "estimate"; // whether target comes from the real budget or an industry placeholder
 }
 
 const CX = 90;
@@ -27,7 +28,7 @@ function arcPath(fromDeg: number, toDeg: number, radius: number) {
  * chart -- the needle sweeps a 180-degree arc from 0% to a fixed max, with
  * a dashed target line marking the operator's ceiling for this metric.
  */
-export function PrimeCostDial({ label, value, target }: Props) {
+export function PrimeCostDial({ label, value, target, targetSource = "estimate" }: Props) {
   const clamped = value == null ? 0 : Math.min(Math.max(value, 0), MAX);
   const angle = -90 + (clamped / MAX) * 180;
   const targetAngle = -90 + (Math.min(target, MAX) / MAX) * 180;
@@ -64,7 +65,9 @@ export function PrimeCostDial({ label, value, target }: Props) {
         {value == null ? "\u2014" : `${value.toFixed(1)}%`}
       </div>
       <div className="dial-label">{label}</div>
-      <div className="dial-target">target &le; {target}%</div>
+      <div className="dial-target">
+        {targetSource === "budget" ? "budget" : "est."} target &le; {target}%
+      </div>
     </div>
   );
 }

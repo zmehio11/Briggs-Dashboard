@@ -11,6 +11,12 @@ export interface Bucket {
   laborPct: number | null;
   cogsPct: number | null;
   primeCostPct: number | null;
+  budgetRevenue: number | null;
+  budgetCogs: number | null;
+  budgetLabor: number | null;
+  budgetLaborPct: number | null;
+  budgetCogsPct: number | null;
+  budgetPrimeCostPct: number | null;
 }
 
 export async function fetchDashboard(period: Period): Promise<Bucket[]> {

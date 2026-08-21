@@ -67,9 +67,24 @@ export default function App() {
 
       {latest && (
         <section className="dials">
-          <PrimeCostDial label="Labor % of Sales" value={latest.laborPct} target={TARGETS.labor} />
-          <PrimeCostDial label="COGS % of Sales" value={latest.cogsPct} target={TARGETS.cogs} />
-          <PrimeCostDial label="Prime Cost %" value={latest.primeCostPct} target={TARGETS.prime} />
+          <PrimeCostDial
+            label="Labor % of Sales"
+            value={latest.laborPct}
+            target={latest.budgetLaborPct ?? TARGETS.labor}
+            targetSource={latest.budgetLaborPct != null ? "budget" : "estimate"}
+          />
+          <PrimeCostDial
+            label="COGS % of Sales"
+            value={latest.cogsPct}
+            target={latest.budgetCogsPct ?? TARGETS.cogs}
+            targetSource={latest.budgetCogsPct != null ? "budget" : "estimate"}
+          />
+          <PrimeCostDial
+            label="Prime Cost %"
+            value={latest.primeCostPct}
+            target={latest.budgetPrimeCostPct ?? TARGETS.prime}
+            targetSource={latest.budgetPrimeCostPct != null ? "budget" : "estimate"}
+          />
         </section>
       )}
 
@@ -97,34 +112,44 @@ export default function App() {
       {buckets.length > 0 && (
         <section className="table-card">
           <h2>By Period</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Period</th>
-                <th>Net Sales</th>
-                <th>Labor Cost</th>
-                <th>Labor %</th>
-                <th>COGS</th>
-                <th>COGS %</th>
-                <th>Prime Cost %</th>
-                <th>Orders</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...buckets].reverse().map((b) => (
-                <tr key={b.key}>
-                  <td>{b.label}</td>
-                  <td>{currency(b.netSales)}</td>
-                  <td>{currency(b.laborCost)}</td>
-                  <td>{b.laborPct == null ? "—" : `${b.laborPct.toFixed(1)}%`}</td>
-                  <td>{currency(b.cogs)}</td>
-                  <td>{b.cogsPct == null ? "—" : `${b.cogsPct.toFixed(1)}%`}</td>
-                  <td>{b.primeCostPct == null ? "—" : `${b.primeCostPct.toFixed(1)}%`}</td>
-                  <td>{b.orderCount}</td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Net Sales</th>
+                  <th>Budget Sales</th>
+                  <th>Labor Cost</th>
+                  <th>Labor %</th>
+                  <th>Budget Labor %</th>
+                  <th>COGS</th>
+                  <th>COGS %</th>
+                  <th>Budget COGS %</th>
+                  <th>Prime Cost %</th>
+                  <th>Budget Prime %</th>
+                  <th>Orders</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {[...buckets].reverse().map((b) => (
+                  <tr key={b.key}>
+                    <td>{b.label}</td>
+                    <td>{currency(b.netSales)}</td>
+                    <td>{b.budgetRevenue == null ? "—" : currency(b.budgetRevenue)}</td>
+                    <td>{currency(b.laborCost)}</td>
+                    <td>{b.laborPct == null ? "—" : `${b.laborPct.toFixed(1)}%`}</td>
+                    <td>{b.budgetLaborPct == null ? "—" : `${b.budgetLaborPct.toFixed(1)}%`}</td>
+                    <td>{currency(b.cogs)}</td>
+                    <td>{b.cogsPct == null ? "—" : `${b.cogsPct.toFixed(1)}%`}</td>
+                    <td>{b.budgetCogsPct == null ? "—" : `${b.budgetCogsPct.toFixed(1)}%`}</td>
+                    <td>{b.primeCostPct == null ? "—" : `${b.primeCostPct.toFixed(1)}%`}</td>
+                    <td>{b.budgetPrimeCostPct == null ? "—" : `${b.budgetPrimeCostPct.toFixed(1)}%`}</td>
+                    <td>{b.orderCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
     </div>

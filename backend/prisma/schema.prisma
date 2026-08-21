@@ -45,6 +45,23 @@ model DailyCogs {
   @@index([businessDate])
 }
 
+/// One row per calendar month, imported from the Excel operating budget.
+/// Fiscal "Month 1" in the workbook maps to whichever real month the
+/// restaurant opened (see backend/scripts/parse-budget.py) — this table
+/// only ever stores real calendar year/month, so the dashboard API can join
+/// on it directly.
+model BudgetMonth {
+  id           String   @id @default(cuid())
+  year         Int
+  month        Int      // 1-12, calendar month
+  totalRevenue Decimal  @db.Decimal(12, 2)
+  totalCogs    Decimal  @db.Decimal(12, 2)
+  totalLabor   Decimal  @db.Decimal(12, 2)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([year, month])
+}
+
 /// Audit trail for the nightly sync job.
 model SyncLog {
   id         String   @id @default(cuid())
