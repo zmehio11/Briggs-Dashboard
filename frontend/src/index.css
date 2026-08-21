@@ -1,0 +1,215 @@
+:root {
+  --bg: #1c1a17;
+  --surface: #262320;
+  --surface-2: #2e2a25;
+  --text: #f3efe7;
+  --text-muted: #a79e8e;
+  --brass: #c9a15a;
+  --olive: #8fa37a;
+  --clay: #c4664a;
+  --hairline: #3a362f;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 20px;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin-bottom: 4px;
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 30px;
+  margin: 0;
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 18px;
+  margin: 0 0 16px;
+  color: var(--text);
+}
+
+.period-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.period-toggle button {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.period-toggle button:hover {
+  color: var(--text);
+}
+
+.period-toggle button.active {
+  background: var(--surface-2);
+  color: var(--brass);
+}
+
+.banner {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+.banner code {
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.banner-error {
+  border-color: var(--clay);
+  color: var(--clay);
+}
+
+.dials {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.dial-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.dial-svg {
+  width: 100%;
+  max-width: 180px;
+  height: auto;
+  margin-bottom: -8px;
+}
+
+.dial-value {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 600;
+}
+
+.dial-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.dial-target {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
+.chart-card,
+.table-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+th,
+td {
+  text-align: right;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  text-align: left;
+  font-family: var(--font-body);
+  color: var(--text-muted);
+}
+
+th {
+  font-family: var(--font-body);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .dials {
+    grid-template-columns: 1fr;
+  }
+  table {
+    font-size: 12px;
+  }
+}

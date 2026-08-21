@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// One row per business date, sourced from Toast.
+model DailySales {
+  id          String   @id @default(cuid())
+  businessDate DateTime @unique @db.Date
+  grossSales  Decimal  @db.Decimal(12, 2)
+  netSales    Decimal  @db.Decimal(12, 2)
+  discounts   Decimal  @db.Decimal(12, 2) @default(0)
+  orderCount  Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@index([businessDate])
+}
+
+/// One row per business date, sourced from Push Operations.
+model DailyLabor {
+  id             String   @id @default(cuid())
+  businessDate   DateTime @unique @db.Date
+  regularHours   Decimal  @db.Decimal(8, 2) @default(0)
+  overtimeHours  Decimal  @db.Decimal(8, 2) @default(0)
+  totalLaborCost Decimal  @db.Decimal(12, 2)
+  employeeCount  Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  @@index([businessDate])
+}
+
+/// One row per business date + category, sourced from MarginEdge.
+model DailyCogs {
+  id           String   @id @default(cuid())
+  businessDate DateTime @db.Date
+  category     String   // e.g. "food", "beverage", "paper", "other"
+  amount       Decimal  @db.Decimal(12, 2)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, category])
+  @@index([businessDate])
+}
+
+/// Audit trail for the nightly sync job.
+model SyncLog {
+  id         String   @id @default(cuid())
+  source     String   // "toast" | "push_operations" | "margin_edge"
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  status     String   // "success" | "failed"
+  rowsWritten Int     @default(0)
+  errorMessage String?
+}
