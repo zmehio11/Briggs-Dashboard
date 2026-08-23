@@ -13,6 +13,11 @@ import { env } from "../lib/env.js";
  * - `GET /orders/v2/orders?businessDate=YYYYMMDD` only returns an array of
  *   order GUIDs, not full order objects — each order's checks/amounts
  *   require a separate `GET /orders/v2/orders/{guid}` call.
+ * - Verified against a real week's data: `check.amount` is the pre-tax
+ *   subtotal and `check.totalAmount` is amount + tax + tip (the amount the
+ *   guest actually paid) — NOT a sales figure. Net sales = amount minus
+ *   discounts minus refunds, counting only checks with paymentStatus
+ *   "CLOSED" (an open/unpaid tab isn't realized revenue yet).
  */
 
 interface ToastToken {
@@ -79,8 +84,8 @@ export async function fetchDailySales(businessDate: string): Promise<DailySalesR
   }
 
   let grossSales = 0;
-  let netSales = 0;
   let discounts = 0;
+  let refunds = 0;
   let orderCount = 0;
 
   for (const guid of orderGuids) {
@@ -88,23 +93,32 @@ export async function fetchDailySales(businessDate: string): Promise<DailySalesR
       headers: authHeaders(token),
     });
     if (order.voided) continue;
-    orderCount += 1;
+    let orderHasClosedCheck = false;
     for (const check of order.checks ?? []) {
+      if (check.voided || check.paymentStatus !== "CLOSED") continue;
+      orderHasClosedCheck = true;
       const checkDiscounts = (check.appliedDiscounts ?? []).reduce(
         (sum: number, d: any) => sum + (d.discountAmount ?? 0),
         0
       );
+      const checkRefunds = (check.payments ?? []).reduce(
+        (sum: number, p: any) => sum + (p.refund?.refundAmount ?? 0),
+        0
+      );
       grossSales += check.amount ?? 0;
-      netSales += check.totalAmount ?? 0;
       discounts += checkDiscounts;
+      refunds += checkRefunds;
     }
+    if (orderHasClosedCheck) orderCount += 1;
   }
+
+  const netSales = grossSales - discounts - refunds;
 
   return {
     businessDate,
     grossSales: round2(grossSales),
     netSales: round2(netSales),
-    discounts: round2(discounts),
+    discounts: round2(discounts + refunds),
     orderCount,
   };
 }
