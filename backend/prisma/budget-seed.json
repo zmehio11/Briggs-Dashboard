@@ -2,85 +2,85 @@
   {
     "year": 2026,
     "month": 6,
-    "totalRevenue": 129500,
-    "totalCogs": 34440,
-    "totalLabor": 57512
+    "totalRevenue": 150500,
+    "totalCogs": 40180,
+    "totalLabor": 64568
   },
   {
     "year": 2026,
     "month": 7,
-    "totalRevenue": 129500,
-    "totalCogs": 34440,
-    "totalLabor": 57512
+    "totalRevenue": 150500,
+    "totalCogs": 40180,
+    "totalLabor": 64568
   },
   {
     "year": 2026,
     "month": 8,
-    "totalRevenue": 138750,
-    "totalCogs": 36900,
-    "totalLabor": 60620
+    "totalRevenue": 161250,
+    "totalCogs": 43050,
+    "totalLabor": 68180
   },
   {
     "year": 2026,
     "month": 9,
-    "totalRevenue": 148000,
-    "totalCogs": 39360,
-    "totalLabor": 63728
+    "totalRevenue": 172000,
+    "totalCogs": 45920,
+    "totalLabor": 71792
   },
   {
     "year": 2026,
     "month": 10,
-    "totalRevenue": 157250,
-    "totalCogs": 41820,
-    "totalLabor": 66836
+    "totalRevenue": 182750,
+    "totalCogs": 48790,
+    "totalLabor": 75404
   },
   {
     "year": 2026,
     "month": 11,
-    "totalRevenue": 175750,
-    "totalCogs": 46740,
-    "totalLabor": 73052
+    "totalRevenue": 204250,
+    "totalCogs": 54530,
+    "totalLabor": 82628
   },
   {
     "year": 2026,
     "month": 12,
-    "totalRevenue": 185000,
-    "totalCogs": 49200,
-    "totalLabor": 76160
+    "totalRevenue": 215000,
+    "totalCogs": 57400,
+    "totalLabor": 86240
   },
   {
     "year": 2027,
     "month": 1,
-    "totalRevenue": 175750,
-    "totalCogs": 46740,
-    "totalLabor": 73052
+    "totalRevenue": 204250,
+    "totalCogs": 54530,
+    "totalLabor": 82628
   },
   {
     "year": 2027,
     "month": 2,
-    "totalRevenue": 157250,
-    "totalCogs": 41820,
-    "totalLabor": 66836
+    "totalRevenue": 215000,
+    "totalCogs": 57400,
+    "totalLabor": 86240
   },
   {
     "year": 2027,
     "month": 3,
-    "totalRevenue": 148000,
-    "totalCogs": 39360,
-    "totalLabor": 63728
+    "totalRevenue": 215000,
+    "totalCogs": 57400,
+    "totalLabor": 86240
   },
   {
     "year": 2027,
     "month": 4,
-    "totalRevenue": 148000,
-    "totalCogs": 39360,
-    "totalLabor": 63728
+    "totalRevenue": 236500,
+    "totalCogs": 63140,
+    "totalLabor": 93464
   },
   {
     "year": 2027,
     "month": 5,
-    "totalRevenue": 157250,
-    "totalCogs": 41820,
-    "totalLabor": 66836
+    "totalRevenue": 258000,
+    "totalCogs": 68880,
+    "totalLabor": 100688
   }
 ]
