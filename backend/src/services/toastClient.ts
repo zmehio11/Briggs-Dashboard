@@ -22,9 +22,11 @@ import { env } from "../lib/env.js";
  * - Each check's `selections[]` are line items; a real menu item selection
  *   has `item.guid` + `displayName` + `quantity` + `preDiscountPrice`.
  *   Modifiers (extra cheese, etc.) aren't tracked as separate "items sold."
- * - `selection.salesCategory.guid` needs a lookup against
- *   `GET /config/v2/salesCategories` to get a readable name (Food, Liquor,
- *   Bottled Beer, Draft Beer, Wine, NA Beverage, Gift Cards, ...).
+ * - `selection.salesCategory` on individual orders is null on a meaningful
+ *   fraction of lines for reasons Toast doesn't document. Categorizing by
+ *   `item.guid` against the full menu (`GET /menus/v2/menus`) instead is
+ *   far more complete — categories there are Food, Liquor, Bottled Beer,
+ *   Draft Beer, Wine, NA Beverage, Gift Cards, etc.
  */
 
 interface ToastToken {
@@ -33,7 +35,7 @@ interface ToastToken {
 }
 
 let cachedToken: ToastToken | null = null;
-let cachedCategories: Map<string, string> | null = null;
+let cachedItemCategories: Map<string, string | null> | null = null;
 
 async function getToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) {
@@ -63,14 +65,30 @@ function authHeaders(token: string) {
   };
 }
 
-/** Sales categories (Food, Liquor, Wine, etc.) — small and rarely changes, so cached per process. */
-async function getSalesCategories(token: string): Promise<Map<string, string>> {
-  if (cachedCategories) return cachedCategories;
-  const { data } = await axios.get(`${env.toast.baseUrl}/config/v2/salesCategories`, {
-    headers: authHeaders(token),
-  });
-  cachedCategories = new Map((data as any[]).map((c) => [c.guid, c.name]));
-  return cachedCategories;
+/**
+ * Maps menu item GUID -> sales category name (Food, Liquor, Wine, etc.),
+ * built by walking the full menu structure. This is far more complete than
+ * reading `selection.salesCategory` off individual orders, which is null on
+ * a meaningful fraction of order lines for reasons Toast doesn't document.
+ * The menu rarely changes, so this is cached per process.
+ */
+async function getItemCategoryMap(token: string): Promise<Map<string, string | null>> {
+  if (cachedItemCategories) return cachedItemCategories;
+  const { data } = await axios.get(`${env.toast.baseUrl}/menus/v2/menus`, { headers: authHeaders(token) });
+
+  const map = new Map<string, string | null>();
+  function walk(groups: any[] | undefined) {
+    for (const group of groups ?? []) {
+      for (const item of group.menuItems ?? []) {
+        map.set(item.guid, item.salesCategory?.name ?? null);
+      }
+      walk(group.menuGroups);
+    }
+  }
+  for (const menu of data?.menus ?? []) walk(menu.menuGroups);
+
+  cachedItemCategories = map;
+  return map;
 }
 
 export interface DailySalesResult {
@@ -101,7 +119,7 @@ export interface DailyToastData {
  */
 export async function fetchDailyToastData(businessDate: string): Promise<DailyToastData> {
   const token = await getToken();
-  const categories = await getSalesCategories(token);
+  const itemCategories = await getItemCategoryMap(token);
   const yyyymmdd = businessDate.replace(/-/g, "");
 
   const orderGuids: string[] = [];
@@ -159,7 +177,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
           itemTotals.set(sel.item.guid, {
             itemGuid: sel.item.guid,
             itemName: sel.displayName ?? "Unknown item",
-            categoryName: sel.salesCategory?.guid ? (categories.get(sel.salesCategory.guid) ?? null) : null,
+            categoryName: itemCategories.get(sel.item.guid) ?? null,
             quantity,
             revenue,
           });
