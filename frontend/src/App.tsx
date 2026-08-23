@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { Bucket, fetchDashboard, Period } from "./lib/api";
 import { PrimeCostDial } from "./components/PrimeCostDial";
+import { ItemsPage } from "./components/ItemsPage";
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "weekly", label: "Weekly" },
@@ -18,10 +19,18 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "yearly", label: "Yearly" },
 ];
 
+const PAGES: { key: Page; label: string }[] = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "items", label: "Items by Day" },
+];
+
+type Page = "dashboard" | "items";
+
 // Common industry targets; adjust once Briggs' own budget is set.
 const TARGETS = { labor: 30, cogs: 30, prime: 60 };
 
 export default function App() {
+  const [page, setPage] = useState<Page>("dashboard");
   const [period, setPeriod] = useState<Period>("weekly");
   const [buckets, setBuckets] = useState<Bucket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,13 +56,25 @@ export default function App() {
           <h1>Sales, Labor &amp; Cost of Sales</h1>
         </div>
         <nav className="period-toggle">
-          {PERIODS.map((p) => (
-            <button key={p.key} className={p.key === period ? "active" : ""} onClick={() => setPeriod(p.key)}>
+          {PAGES.map((p) => (
+            <button key={p.key} className={p.key === page ? "active" : ""} onClick={() => setPage(p.key)}>
               {p.label}
             </button>
           ))}
         </nav>
       </header>
+
+      {page === "items" && <ItemsPage />}
+
+      {page === "dashboard" && (
+        <>
+      <nav className="period-toggle" style={{ marginBottom: 24 }}>
+        {PERIODS.map((p) => (
+          <button key={p.key} className={p.key === period ? "active" : ""} onClick={() => setPeriod(p.key)}>
+            {p.label}
+          </button>
+        ))}
+      </nav>
 
       {error && <div className="banner banner-error">Couldn't load dashboard data: {error}</div>}
       {loading && <div className="banner">Loading…</div>}
@@ -151,6 +172,8 @@ export default function App() {
             </table>
           </div>
         </section>
+      )}
+        </>
       )}
     </div>
   );

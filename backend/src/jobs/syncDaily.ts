@@ -1,6 +1,6 @@
 import { format, subDays } from "date-fns";
 import { prisma } from "../lib/prisma.js";
-import { fetchDailySales } from "../services/toastClient.js";
+import { fetchDailyToastData } from "../services/toastClient.js";
 import { fetchDailyLabor } from "../services/pushOperationsClient.js";
 import { fetchDailyCogs } from "../services/marginEdgeClient.js";
 
@@ -14,7 +14,7 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
   const date = new Date(`${businessDate}T00:00:00Z`);
 
   await runSource("toast", async () => {
-    const sales = await fetchDailySales(businessDate);
+    const { sales, items } = await fetchDailyToastData(businessDate);
     await prisma.dailySales.upsert({
       where: { businessDate: date },
       create: {
@@ -31,7 +31,14 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
         orderCount: sales.orderCount,
       },
     });
-    return 1;
+    for (const item of items) {
+      await prisma.dailyItemSales.upsert({
+        where: { businessDate_itemGuid: { businessDate: date, itemGuid: item.itemGuid } },
+        create: { businessDate: date, itemGuid: item.itemGuid, itemName: item.itemName, quantity: item.quantity, revenue: item.revenue },
+        update: { itemName: item.itemName, quantity: item.quantity, revenue: item.revenue },
+      });
+    }
+    return 1 + items.length;
   });
 
   await runSource("push_operations", async () => {

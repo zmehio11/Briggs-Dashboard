@@ -25,3 +25,28 @@ export async function fetchDashboard(period: Period): Promise<Bucket[]> {
   const data = await res.json();
   return data.buckets;
 }
+
+export interface DayOfWeekStat {
+  day: string;
+  avgQuantity: number | null;
+  avgRevenue: number | null;
+}
+
+export interface ItemStat {
+  itemGuid: string;
+  itemName: string;
+  totalQuantity: number;
+  totalRevenue: number;
+  byDayOfWeek: DayOfWeekStat[];
+}
+
+export interface ItemsResponse {
+  daysObservedByWeekday: Record<string, number>;
+  items: ItemStat[];
+}
+
+export async function fetchItems(): Promise<ItemsResponse> {
+  const res = await fetch(`/api/items`);
+  if (!res.ok) throw new Error(`Items fetch failed: ${res.status}`);
+  return res.json();
+}
