@@ -14,7 +14,7 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
   const date = new Date(`${businessDate}T00:00:00Z`);
 
   await runSource("toast", async () => {
-    const { sales, items } = await fetchDailyToastData(businessDate);
+    const { sales, items, flags } = await fetchDailyToastData(businessDate);
     await prisma.dailySales.upsert({
       where: { businessDate: date },
       create: {
@@ -45,7 +45,23 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
         update: { itemName: item.itemName, categoryName: item.categoryName, quantity: item.quantity, revenue: item.revenue },
       });
     }
-    return 1 + items.length;
+    if (flags.length > 0) {
+      await prisma.transactionFlag.createMany({
+        data: flags.map((f) => ({
+          businessDate: date,
+          orderGuid: f.orderGuid,
+          checkGuid: f.checkGuid,
+          employeeGuid: f.employeeGuid,
+          employeeName: f.employeeName,
+          flagType: f.flagType,
+          severity: f.severity,
+          amount: f.amount,
+          description: f.description,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    return 1 + items.length + flags.length;
   });
 
   await runSource("push_operations", async () => {

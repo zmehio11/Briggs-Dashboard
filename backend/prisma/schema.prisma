@@ -78,6 +78,27 @@ model BudgetMonth {
   @@unique([year, month])
 }
 
+/// A specific check/discount/void worth an owner's attention -- not a log
+/// of every transaction, just the ones that trip a rule (self-approved
+/// comp, a check voided after it was paid, a check with unusually many
+/// voided items, or a refund). One row per (check, flag type).
+model TransactionFlag {
+  id           String   @id @default(cuid())
+  businessDate DateTime @db.Date
+  orderGuid    String
+  checkGuid    String
+  employeeGuid String?
+  employeeName String?
+  flagType     String // "self_approved_discount" | "large_discount" | "void_after_payment" | "multiple_voids" | "refund"
+  severity     String // "high" | "medium"
+  amount       Decimal  @db.Decimal(12, 2)
+  description  String
+  createdAt    DateTime @default(now())
+
+  @@unique([checkGuid, flagType])
+  @@index([businessDate])
+}
+
 /// Audit trail for the nightly sync job.
 model SyncLog {
   id         String   @id @default(cuid())

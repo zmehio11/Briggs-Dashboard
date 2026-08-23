@@ -12,6 +12,7 @@ import {
 import { Bucket, fetchDashboard, Period } from "./lib/api";
 import { PrimeCostDial } from "./components/PrimeCostDial";
 import { ItemsPage } from "./components/ItemsPage";
+import { FlagsPage } from "./components/FlagsPage";
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "weekly", label: "Weekly" },
@@ -22,9 +23,10 @@ const PERIODS: { key: Period; label: string }[] = [
 const PAGES: { key: Page; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "items", label: "Items by Day" },
+  { key: "flags", label: "Sales Analysis" },
 ];
 
-type Page = "dashboard" | "items";
+type Page = "dashboard" | "items" | "flags";
 
 // Common industry targets; adjust once Briggs' own budget is set.
 const TARGETS = { labor: 30, cogs: 30, prime: 60 };
@@ -65,6 +67,7 @@ export default function App() {
       </header>
 
       {page === "items" && <ItemsPage />}
+      {page === "flags" && <FlagsPage />}
 
       {page === "dashboard" && (
         <>

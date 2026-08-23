@@ -27,6 +27,8 @@ import { env } from "../lib/env.js";
  *   `item.guid` against the full menu (`GET /menus/v2/menus`) instead is
  *   far more complete — categories there are Food, Liquor, Bottled Beer,
  *   Draft Beer, Wine, NA Beverage, Gift Cards, etc.
+ * - `check.openedBy.guid` is a RestaurantUser reference; `GET
+ *   /labor/v1/employees` resolves it to a real name.
  */
 
 interface ToastToken {
@@ -36,6 +38,7 @@ interface ToastToken {
 
 let cachedToken: ToastToken | null = null;
 let cachedItemCategories: Map<string, string | null> | null = null;
+let cachedEmployeeNames: Map<string, string> | null = null;
 
 async function getToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) {
@@ -91,6 +94,16 @@ async function getItemCategoryMap(token: string): Promise<Map<string, string | n
   return map;
 }
 
+/** Employee GUID -> "First Last", cached per process (staff roster rarely changes). */
+async function getEmployeeNames(token: string): Promise<Map<string, string>> {
+  if (cachedEmployeeNames) return cachedEmployeeNames;
+  const { data } = await axios.get(`${env.toast.baseUrl}/labor/v1/employees`, { headers: authHeaders(token) });
+  cachedEmployeeNames = new Map(
+    (data as any[]).map((e) => [e.guid, [e.firstName, e.lastName].filter(Boolean).join(" ") || "Unknown"])
+  );
+  return cachedEmployeeNames;
+}
+
 export interface DailySalesResult {
   businessDate: string; // YYYY-MM-DD
   grossSales: number;
@@ -107,9 +120,25 @@ export interface ItemSalesResult {
   revenue: number;
 }
 
+export type FlagType = "self_approved_discount" | "large_discount" | "void_after_payment" | "multiple_voids" | "refund";
+export type FlagSeverity = "high" | "medium";
+
+export interface TransactionFlagResult {
+  businessDate: string;
+  orderGuid: string;
+  checkGuid: string;
+  employeeGuid: string | null;
+  employeeName: string | null;
+  flagType: FlagType;
+  severity: FlagSeverity;
+  amount: number;
+  description: string;
+}
+
 export interface DailyToastData {
   sales: DailySalesResult;
   items: ItemSalesResult[];
+  flags: TransactionFlagResult[];
 }
 
 /**
@@ -120,6 +149,7 @@ export interface DailyToastData {
 export async function fetchDailyToastData(businessDate: string): Promise<DailyToastData> {
   const token = await getToken();
   const itemCategories = await getItemCategoryMap(token);
+  const employeeNames = await getEmployeeNames(token);
   const yyyymmdd = businessDate.replace(/-/g, "");
 
   const orderGuids: string[] = [];
@@ -143,16 +173,30 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
   let refunds = 0;
   let orderCount = 0;
   const itemTotals = new Map<string, ItemSalesResult>();
+  const flags: TransactionFlagResult[] = [];
 
   for (const guid of orderGuids) {
     const { data: order } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders/${guid}`, {
       headers: authHeaders(token),
     });
-    if (order.voided) continue;
+    const orderVoided = !!order.voided;
     let orderHasClosedCheck = false;
+
     for (const check of order.checks ?? []) {
-      if (check.voided || check.paymentStatus !== "CLOSED") continue;
+      const checkVoided = !!check.voided;
+      const employeeGuid: string | null = check.openedBy?.guid ?? null;
+      const employeeName = employeeGuid ? (employeeNames.get(employeeGuid) ?? null) : null;
+
+      // Flag detection runs on every check, voided or not -- these are the
+      // signals that matter *because* they involve a void/discount/refund.
+      flags.push(
+        ...detectCheckFlags({ businessDate, orderGuid: order.guid, order, check, orderVoided, checkVoided, employeeGuid, employeeName })
+      );
+
+      const isRealizedSale = !orderVoided && !checkVoided && check.paymentStatus === "CLOSED";
+      if (!isRealizedSale) continue;
       orderHasClosedCheck = true;
+
       const checkDiscounts = (check.appliedDiscounts ?? []).reduce(
         (sum: number, d: any) => sum + (d.discountAmount ?? 0),
         0
@@ -198,7 +242,107 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
       orderCount,
     },
     items: Array.from(itemTotals.values()).map((i) => ({ ...i, revenue: round2(i.revenue) })),
+    flags,
   };
+}
+
+/**
+ * Rule-based flags for a single check — deliberately simple, explainable
+ * thresholds rather than statistical anomaly detection, so an owner can
+ * see exactly why something was flagged. Tune the thresholds below as
+ * Briggs' normal patterns become clear.
+ */
+function detectCheckFlags(args: {
+  businessDate: string;
+  orderGuid: string;
+  order: any;
+  check: any;
+  orderVoided: boolean;
+  checkVoided: boolean;
+  employeeGuid: string | null;
+  employeeName: string | null;
+}): TransactionFlagResult[] {
+  const { businessDate, orderGuid, check, orderVoided, checkVoided, employeeGuid, employeeName } = args;
+  const flags: TransactionFlagResult[] = [];
+  const who = employeeName ?? "an unknown employee";
+
+  // A check that was paid, then voided (at the order or check level) --
+  // the classic "ring it up, take the cash, void it" theft pattern.
+  if ((orderVoided || checkVoided) && check.paidDate) {
+    flags.push({
+      businessDate,
+      orderGuid,
+      checkGuid: check.guid,
+      employeeGuid,
+      employeeName,
+      flagType: "void_after_payment",
+      severity: "high",
+      amount: Math.abs(check.amount ?? 0),
+      description: `Check for $${(check.amount ?? 0).toFixed(2)} was paid, then voided by ${who}.`,
+    });
+  }
+
+  // Discounts/comps: flag self-approval (the person who opened the check
+  // also approved their own discount) and any large discount regardless
+  // of who approved it.
+  for (const d of check.appliedDiscounts ?? []) {
+    const amount = Math.abs(d.discountAmount ?? 0);
+    const percent: number | null = d.discountPercent ?? null;
+    const isLarge = (percent != null && percent >= 50) || amount >= 50;
+    const isSelfApproved = !!(d.approver?.guid && employeeGuid && d.approver.guid === employeeGuid);
+    if (!isSelfApproved && !isLarge) continue;
+
+    const pctLabel = percent != null ? `${percent}%` : null;
+    flags.push({
+      businessDate,
+      orderGuid,
+      checkGuid: check.guid,
+      employeeGuid,
+      employeeName,
+      flagType: isSelfApproved ? "self_approved_discount" : "large_discount",
+      severity: isSelfApproved && isLarge ? "high" : "medium",
+      amount,
+      description: isSelfApproved
+        ? `${who} approved their own "${d.name ?? "discount"}" (${[pctLabel, `$${amount.toFixed(2)}`].filter(Boolean).join(", ")}).`
+        : `Large "${d.name ?? "discount"}" of ${[pctLabel, `$${amount.toFixed(2)}`].filter(Boolean).join(", ")} on ${who}'s check.`,
+    });
+  }
+
+  // A check with several voided line items, or a meaningful dollar amount
+  // voided off it -- normal in ones and twos, worth a look in bulk.
+  const voidedSelections = (check.selections ?? []).filter((s: any) => s.voided);
+  const voidedValue = voidedSelections.reduce((sum: number, s: any) => sum + (s.price ?? 0), 0);
+  if (voidedSelections.length >= 3 || voidedValue >= 50) {
+    flags.push({
+      businessDate,
+      orderGuid,
+      checkGuid: check.guid,
+      employeeGuid,
+      employeeName,
+      flagType: "multiple_voids",
+      severity: voidedSelections.length >= 5 || voidedValue >= 100 ? "high" : "medium",
+      amount: voidedValue,
+      description: `${voidedSelections.length} item(s) worth $${voidedValue.toFixed(2)} voided on ${who}'s check.`,
+    });
+  }
+
+  // Refunds -- any amount is worth a line in the log; large ones stand out.
+  const checkRefunds = (check.payments ?? []).reduce((sum: number, p: any) => sum + (p.refund?.refundAmount ?? 0), 0);
+  if (checkRefunds > 0) {
+    flags.push({
+      businessDate,
+      orderGuid,
+      checkGuid: check.guid,
+      employeeGuid,
+      employeeName,
+      flagType: "refund",
+      severity: checkRefunds >= 100 ? "high" : "medium",
+      amount: checkRefunds,
+      description: `$${checkRefunds.toFixed(2)} refunded on ${who}'s check.`,
+    });
+  }
+
+  return flags;
 }
 
 function round2(n: number): number {

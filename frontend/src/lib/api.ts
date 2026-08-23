@@ -54,3 +54,33 @@ export async function fetchItems(): Promise<ItemsResponse> {
   if (!res.ok) throw new Error(`Items fetch failed: ${res.status}`);
   return res.json();
 }
+
+export type FlagType = "self_approved_discount" | "large_discount" | "void_after_payment" | "multiple_voids" | "refund";
+export type FlagSeverity = "high" | "medium";
+
+export interface TransactionFlag {
+  id: string;
+  businessDate: string;
+  employeeName: string | null;
+  flagType: FlagType;
+  severity: FlagSeverity;
+  amount: number;
+  description: string;
+}
+
+export interface EmployeeFlagSummary {
+  employeeName: string;
+  count: number;
+  totalAmount: number;
+}
+
+export interface FlagsResponse {
+  flags: TransactionFlag[];
+  byEmployee: EmployeeFlagSummary[];
+}
+
+export async function fetchFlags(): Promise<FlagsResponse> {
+  const res = await fetch(`/api/flags`);
+  if (!res.ok) throw new Error(`Flags fetch failed: ${res.status}`);
+  return res.json();
+}
