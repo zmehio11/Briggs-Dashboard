@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { fetchItems, ItemStat } from "../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { CategoryGroup, fetchItems, ItemStat } from "../lib/api";
 
 const WEEKDAY_ABBR: Record<string, string> = {
   Monday: "Mon",
@@ -11,11 +11,18 @@ const WEEKDAY_ABBR: Record<string, string> = {
   Sunday: "Sun",
 };
 
+const FILTERS: { key: CategoryGroup | "All"; label: string }[] = [
+  { key: "All", label: "All" },
+  { key: "Food", label: "Food" },
+  { key: "Beverage", label: "Beverage" },
+];
+
 export function ItemsPage() {
   const [items, setItems] = useState<ItemStat[]>([]);
   const [daysObserved, setDaysObserved] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<CategoryGroup | "All">("All");
 
   useEffect(() => {
     setLoading(true);
@@ -31,6 +38,10 @@ export function ItemsPage() {
 
   const currency = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   const weekdays = Object.keys(WEEKDAY_ABBR);
+  const filtered = useMemo(
+    () => (filter === "All" ? items : items.filter((i) => i.categoryGroup === filter)),
+    [items, filter]
+  );
 
   return (
     <div>
@@ -46,7 +57,16 @@ export function ItemsPage() {
 
       {items.length > 0 && (
         <section className="table-card">
-          <h2>Average Items Sold by Day of Week</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <h2 style={{ marginBottom: 0 }}>Average Items Sold by Day of Week</h2>
+            <nav className="period-toggle">
+              {FILTERS.map((f) => (
+                <button key={f.key} className={f.key === filter ? "active" : ""} onClick={() => setFilter(f.key)}>
+                  {f.label}
+                </button>
+              ))}
+            </nav>
+          </div>
           <p className="subtext">
             Averaged across all synced history —{" "}
             {weekdays.map((d) => `${WEEKDAY_ABBR[d]} (${daysObserved[d] ?? 0})`).join(", ")} days observed.
@@ -56,6 +76,7 @@ export function ItemsPage() {
               <thead>
                 <tr>
                   <th>Item</th>
+                  <th>Category</th>
                   <th>Total Sold</th>
                   <th>Total Revenue</th>
                   {weekdays.map((d) => (
@@ -64,9 +85,10 @@ export function ItemsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
+                {filtered.map((item) => (
                   <tr key={item.itemGuid}>
                     <td>{item.itemName}</td>
+                    <td>{item.categoryName ?? "—"}</td>
                     <td>{item.totalQuantity}</td>
                     <td>{currency(item.totalRevenue)}</td>
                     {item.byDayOfWeek.map((d) => (

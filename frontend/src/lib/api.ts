@@ -32,9 +32,13 @@ export interface DayOfWeekStat {
   avgRevenue: number | null;
 }
 
+export type CategoryGroup = "Food" | "Beverage" | "Other";
+
 export interface ItemStat {
   itemGuid: string;
   itemName: string;
+  categoryName: string | null;
+  categoryGroup: CategoryGroup;
   totalQuantity: number;
   totalRevenue: number;
   byDayOfWeek: DayOfWeekStat[];

@@ -34,8 +34,15 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
     for (const item of items) {
       await prisma.dailyItemSales.upsert({
         where: { businessDate_itemGuid: { businessDate: date, itemGuid: item.itemGuid } },
-        create: { businessDate: date, itemGuid: item.itemGuid, itemName: item.itemName, quantity: item.quantity, revenue: item.revenue },
-        update: { itemName: item.itemName, quantity: item.quantity, revenue: item.revenue },
+        create: {
+          businessDate: date,
+          itemGuid: item.itemGuid,
+          itemName: item.itemName,
+          categoryName: item.categoryName,
+          quantity: item.quantity,
+          revenue: item.revenue,
+        },
+        update: { itemName: item.itemName, categoryName: item.categoryName, quantity: item.quantity, revenue: item.revenue },
       });
     }
     return 1 + items.length;

@@ -52,6 +52,7 @@ model DailyItemSales {
   businessDate DateTime @db.Date
   itemGuid     String
   itemName     String
+  categoryName String?
   quantity     Int
   revenue      Decimal  @db.Decimal(12, 2)
   updatedAt    DateTime @updatedAt

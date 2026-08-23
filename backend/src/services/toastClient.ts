@@ -22,6 +22,9 @@ import { env } from "../lib/env.js";
  * - Each check's `selections[]` are line items; a real menu item selection
  *   has `item.guid` + `displayName` + `quantity` + `preDiscountPrice`.
  *   Modifiers (extra cheese, etc.) aren't tracked as separate "items sold."
+ * - `selection.salesCategory.guid` needs a lookup against
+ *   `GET /config/v2/salesCategories` to get a readable name (Food, Liquor,
+ *   Bottled Beer, Draft Beer, Wine, NA Beverage, Gift Cards, ...).
  */
 
 interface ToastToken {
@@ -30,6 +33,7 @@ interface ToastToken {
 }
 
 let cachedToken: ToastToken | null = null;
+let cachedCategories: Map<string, string> | null = null;
 
 async function getToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) {
@@ -59,6 +63,16 @@ function authHeaders(token: string) {
   };
 }
 
+/** Sales categories (Food, Liquor, Wine, etc.) — small and rarely changes, so cached per process. */
+async function getSalesCategories(token: string): Promise<Map<string, string>> {
+  if (cachedCategories) return cachedCategories;
+  const { data } = await axios.get(`${env.toast.baseUrl}/config/v2/salesCategories`, {
+    headers: authHeaders(token),
+  });
+  cachedCategories = new Map((data as any[]).map((c) => [c.guid, c.name]));
+  return cachedCategories;
+}
+
 export interface DailySalesResult {
   businessDate: string; // YYYY-MM-DD
   grossSales: number;
@@ -70,6 +84,7 @@ export interface DailySalesResult {
 export interface ItemSalesResult {
   itemGuid: string;
   itemName: string;
+  categoryName: string | null;
   quantity: number;
   revenue: number;
 }
@@ -86,6 +101,7 @@ export interface DailyToastData {
  */
 export async function fetchDailyToastData(businessDate: string): Promise<DailyToastData> {
   const token = await getToken();
+  const categories = await getSalesCategories(token);
   const yyyymmdd = businessDate.replace(/-/g, "");
 
   const orderGuids: string[] = [];
@@ -143,6 +159,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
           itemTotals.set(sel.item.guid, {
             itemGuid: sel.item.guid,
             itemName: sel.displayName ?? "Unknown item",
+            categoryName: sel.salesCategory?.guid ? (categories.get(sel.salesCategory.guid) ?? null) : null,
             quantity,
             revenue,
           });

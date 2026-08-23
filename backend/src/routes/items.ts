@@ -32,6 +32,7 @@ itemsRouter.get("/", async (_req, res) => {
   type ItemAgg = {
     itemGuid: string;
     itemName: string;
+    categoryName: string | null;
     totalQuantity: number;
     totalRevenue: number;
     quantityByWeekday: Map<string, number>;
@@ -45,6 +46,7 @@ itemsRouter.get("/", async (_req, res) => {
       agg = {
         itemGuid: row.itemGuid,
         itemName: row.itemName,
+        categoryName: row.categoryName,
         totalQuantity: 0,
         totalRevenue: 0,
         quantityByWeekday: new Map(),
@@ -64,6 +66,8 @@ itemsRouter.get("/", async (_req, res) => {
     .map((agg) => ({
       itemGuid: agg.itemGuid,
       itemName: agg.itemName,
+      categoryName: agg.categoryName,
+      categoryGroup: classifyCategory(agg.categoryName),
       totalQuantity: agg.totalQuantity,
       totalRevenue: round2(agg.totalRevenue),
       byDayOfWeek: WEEKDAYS.map((day) => {
@@ -83,6 +87,19 @@ itemsRouter.get("/", async (_req, res) => {
     items: result,
   });
 });
+
+/**
+ * Coarse Food/Beverage/Other split on top of Toast's real sales category
+ * names — everything that isn't literally "Food" or "Gift Cards" is a
+ * beverage category in this account's Toast setup (Liquor, Bottled Beer,
+ * Draft Beer, Wine, NA Beverage).
+ */
+function classifyCategory(categoryName: string | null): "Food" | "Beverage" | "Other" {
+  if (!categoryName) return "Other";
+  if (categoryName === "Food") return "Food";
+  if (categoryName === "Gift Cards") return "Other";
+  return "Beverage";
+}
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
