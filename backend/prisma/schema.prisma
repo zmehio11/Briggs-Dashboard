@@ -78,6 +78,23 @@ model BudgetMonth {
   @@unique([year, month])
 }
 
+/// Current theoretical cost per unit for every sellable recipe, sourced
+/// from MarginEdge. Refreshed on every nightly sync (whole-menu snapshot,
+/// not per business date) — matched against Toast item names by
+/// normalizedName since the two systems share no common ID.
+model RecipeCost {
+  id             String   @id @default(cuid())
+  recipeId       String   @unique
+  recipeName     String
+  normalizedName String
+  unitCost       Decimal  @db.Decimal(10, 4)
+  unit           String
+  categoryType   String // MENU | BAR
+  updatedAt      DateTime @updatedAt
+
+  @@index([normalizedName])
+}
+
 /// A specific check/discount/void worth an owner's attention -- not a log
 /// of every transaction, just the ones that trip a rule (self-approved
 /// comp, a check voided after it was paid, a check with unusually many

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { format } from "date-fns";
 import { prisma } from "../lib/prisma.js";
+import { normalizeItemName } from "../lib/normalizeItemName.js";
 
 export const itemsRouter = Router();
 
@@ -15,12 +16,21 @@ const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
  * that weekday has actually been synced (from DailySales), not just the
  * days a given item happened to sell, so a slow Tuesday for one item still
  * pulls its average down rather than being silently excluded.
+ *
+ * Also joins in MarginEdge's recipe cost (matched by normalized name,
+ * since Toast and MarginEdge share no common item ID) to compute margin,
+ * and classifies matched items into the classic menu-engineering
+ * quadrant — Star / Plowhorse / Puzzle / Dog — by splitting on the median
+ * quantity and median margin % across items that have a cost match.
  */
 itemsRouter.get("/", async (_req, res) => {
-  const [syncedDays, itemRows] = await Promise.all([
+  const [syncedDays, itemRows, recipeCosts] = await Promise.all([
     prisma.dailySales.findMany({ select: { businessDate: true } }),
     prisma.dailyItemSales.findMany(),
+    prisma.recipeCost.findMany(),
   ]);
+
+  const costByName = new Map(recipeCosts.map((r) => [r.normalizedName, r]));
 
   const daysObservedByWeekday = new Map<string, number>();
   for (const day of WEEKDAYS) daysObservedByWeekday.set(day, 0);
@@ -61,15 +71,37 @@ itemsRouter.get("/", async (_req, res) => {
     agg.revenueByWeekday.set(weekday, (agg.revenueByWeekday.get(weekday) ?? 0) + Number(row.revenue));
   }
 
-  const result = Array.from(items.values())
-    .sort((a, b) => b.totalQuantity - a.totalQuantity)
-    .map((agg) => ({
+  const withCost = Array.from(items.values()).map((agg) => {
+    const cost = costByName.get(normalizeItemName(agg.itemName));
+    const unitCost = cost ? Number(cost.unitCost) : null;
+    const totalCost = unitCost != null ? round2(unitCost * agg.totalQuantity) : null;
+    const margin = totalCost != null ? round2(agg.totalRevenue - totalCost) : null;
+    const marginPct = margin != null && agg.totalRevenue > 0 ? round2((margin / agg.totalRevenue) * 100) : null;
+    return { agg, unitCost, totalCost, margin, marginPct };
+  });
+
+  // Median split (on items with a cost match) defines the four quadrants.
+  const matched = withCost.filter((i) => i.marginPct != null);
+  const medianQuantity = median(matched.map((i) => i.agg.totalQuantity));
+  const medianMarginPct = median(matched.map((i) => i.marginPct as number));
+
+  const result = withCost
+    .sort((a, b) => b.agg.totalQuantity - a.agg.totalQuantity)
+    .map(({ agg, unitCost, totalCost, margin, marginPct }) => ({
       itemGuid: agg.itemGuid,
       itemName: agg.itemName,
       categoryName: agg.categoryName,
       categoryGroup: classifyCategory(agg.categoryName),
       totalQuantity: agg.totalQuantity,
       totalRevenue: round2(agg.totalRevenue),
+      unitCost,
+      totalCost,
+      margin,
+      marginPct,
+      quadrant:
+        marginPct == null
+          ? null
+          : quadrant(agg.totalQuantity >= medianQuantity, marginPct >= medianMarginPct),
       byDayOfWeek: WEEKDAYS.map((day) => {
         const daysObserved = daysObservedByWeekday.get(day) ?? 0;
         const quantity = agg.quantityByWeekday.get(day) ?? 0;
@@ -84,6 +116,8 @@ itemsRouter.get("/", async (_req, res) => {
 
   res.json({
     daysObservedByWeekday: Object.fromEntries(daysObservedByWeekday),
+    matchedCostCount: matched.length,
+    unmatchedCostCount: withCost.length - matched.length,
     items: result,
   });
 });
@@ -99,6 +133,20 @@ function classifyCategory(categoryName: string | null): "Food" | "Beverage" | "O
   if (categoryName === "Food") return "Food";
   if (categoryName === "Gift Cards") return "Other";
   return "Beverage";
+}
+
+function quadrant(highVolume: boolean, highMargin: boolean): "Star" | "Plowhorse" | "Puzzle" | "Dog" {
+  if (highVolume && highMargin) return "Star"; // sells well, earns well -- promote it
+  if (highVolume && !highMargin) return "Plowhorse"; // sells well, thin margin -- re-price or re-engineer
+  if (!highVolume && highMargin) return "Puzzle"; // earns well, doesn't sell -- feature it more
+  return "Dog"; // neither -- candidate to cut
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
 function round2(n: number): number {

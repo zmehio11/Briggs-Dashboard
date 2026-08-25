@@ -2,7 +2,8 @@ import { format, subDays } from "date-fns";
 import { prisma } from "../lib/prisma.js";
 import { fetchDailyToastData } from "../services/toastClient.js";
 import { fetchDailyLabor } from "../services/pushOperationsClient.js";
-import { fetchDailyCogs } from "../services/marginEdgeClient.js";
+import { fetchDailyCogs, fetchRecipeCosts } from "../services/marginEdgeClient.js";
+import { normalizeItemName } from "../lib/normalizeItemName.js";
 
 /**
  * Pulls one business date's data from Toast, Push Operations, and
@@ -94,7 +95,32 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
         update: { amount },
       });
     }
-    return cogs.byCategory.length;
+
+    // Recipe costs are a whole-menu snapshot, not scoped to businessDate --
+    // refreshed here too since it rides along on the same MarginEdge sync.
+    const recipes = await fetchRecipeCosts();
+    for (const r of recipes) {
+      await prisma.recipeCost.upsert({
+        where: { recipeId: r.recipeId },
+        create: {
+          recipeId: r.recipeId,
+          recipeName: r.recipeName,
+          normalizedName: normalizeItemName(r.recipeName),
+          unitCost: r.unitCost,
+          unit: r.unit,
+          categoryType: r.categoryType,
+        },
+        update: {
+          recipeName: r.recipeName,
+          normalizedName: normalizeItemName(r.recipeName),
+          unitCost: r.unitCost,
+          unit: r.unit,
+          categoryType: r.categoryType,
+        },
+      });
+    }
+
+    return cogs.byCategory.length + recipes.length;
   });
 }
 

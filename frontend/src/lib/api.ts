@@ -33,6 +33,7 @@ export interface DayOfWeekStat {
 }
 
 export type CategoryGroup = "Food" | "Beverage" | "Other";
+export type Quadrant = "Star" | "Plowhorse" | "Puzzle" | "Dog";
 
 export interface ItemStat {
   itemGuid: string;
@@ -41,11 +42,18 @@ export interface ItemStat {
   categoryGroup: CategoryGroup;
   totalQuantity: number;
   totalRevenue: number;
+  unitCost: number | null;
+  totalCost: number | null;
+  margin: number | null;
+  marginPct: number | null;
+  quadrant: Quadrant | null;
   byDayOfWeek: DayOfWeekStat[];
 }
 
 export interface ItemsResponse {
   daysObservedByWeekday: Record<string, number>;
+  matchedCostCount: number;
+  unmatchedCostCount: number;
   items: ItemStat[];
 }
 
