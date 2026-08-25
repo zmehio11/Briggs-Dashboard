@@ -4,16 +4,17 @@ import { env } from "../lib/env.js";
 /**
  * Push Operations client — pulls daily labor totals for one business date.
  *
- * VERIFY before going live, against your Push Operations API docs / account
- * rep — this integration is built on the general shape most scheduling/
- * payroll platforms use (API key in header, timesheets or labor-cost-summary
- * endpoint scoped by company + location + date range), but Push's exact
- * paths and auth scheme need confirming:
- * - Auth scheme: API key header vs OAuth2.
- * - Whether labor cost is available as a pre-aggregated daily summary, or
- *   needs to be computed by summing individual timesheet/shift entries
- *   (in which case you also need each employee's effective pay rate to
- *   compute cost, not just hours).
+ * Verified against developers.pushoperations.com:
+ * - Auth: `Authorization: Bearer <token>`.
+ * - Base URL is https://api.pushoperations.com/platform/api/v1 (note the
+ *   /platform segment — easy to miss).
+ * - `GET /analytics/summary/labour-actuals?company={companyId}&start=YYYY-MM-DD&end=YYYY-MM-DD`
+ *   returns `{ data: { totalCosts, totalHours, labourActualByDate: [...] } }`
+ *   — no location parameter; this is scoped by company only. Labour
+ *   endpoints cap date ranges at 2 days, so we always query a single day.
+ * - The response doesn't include an overtime/regular split or an employee
+ *   count, so those fields are left at 0 — nothing in the dashboard UI
+ *   currently uses them (only totalLaborCost feeds the labor % calc).
  */
 
 export interface DailyLaborResult {
@@ -25,35 +26,20 @@ export interface DailyLaborResult {
 }
 
 export async function fetchDailyLabor(businessDate: string): Promise<DailyLaborResult> {
-  const { data } = await axios.get(
-    `${env.pushOperations.baseUrl}/api/v2/companies/${env.pushOperations.companyId}/locations/${env.pushOperations.locationId}/timesheets`,
-    {
-      headers: { Authorization: `Bearer ${env.pushOperations.apiKey}` },
-      params: { date: businessDate },
-    }
-  );
+  const { data } = await axios.get(`${env.pushOperations.baseUrl}/analytics/summary/labour-actuals`, {
+    headers: { Authorization: `Bearer ${env.pushOperations.apiKey}` },
+    params: { company: env.pushOperations.companyId, start: businessDate, end: businessDate },
+  });
 
-  const entries: any[] = Array.isArray(data) ? data : (data?.timesheets ?? []);
-
-  let regularHours = 0;
-  let overtimeHours = 0;
-  let totalLaborCost = 0;
-  const employeeIds = new Set<string>();
-
-  for (const entry of entries) {
-    // VERIFY field names against the real payload.
-    regularHours += entry.regularHours ?? 0;
-    overtimeHours += entry.overtimeHours ?? 0;
-    totalLaborCost += entry.totalPay ?? entry.laborCost ?? 0;
-    if (entry.employeeId) employeeIds.add(entry.employeeId);
-  }
+  const totalCosts: number = data?.data?.totalCosts ?? 0;
+  const totalHours: number = data?.data?.totalHours ?? 0;
 
   return {
     businessDate,
-    regularHours: round2(regularHours),
-    overtimeHours: round2(overtimeHours),
-    totalLaborCost: round2(totalLaborCost),
-    employeeCount: employeeIds.size,
+    regularHours: round2(totalHours),
+    overtimeHours: 0,
+    totalLaborCost: round2(totalCosts),
+    employeeCount: 0,
   };
 }
 

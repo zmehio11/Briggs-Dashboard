@@ -27,7 +27,7 @@ export const env = {
     apiKey: process.env.PUSH_OPS_API_KEY ?? "",
     companyId: process.env.PUSH_OPS_COMPANY_ID ?? "",
     locationId: process.env.PUSH_OPS_LOCATION_ID ?? "",
-    baseUrl: process.env.PUSH_OPS_API_BASE_URL ?? "https://api.pushoperations.com",
+    baseUrl: process.env.PUSH_OPS_API_BASE_URL ?? "https://api.pushoperations.com/platform/api/v1",
   },
   marginEdge: {
     apiKey: process.env.MARGIN_EDGE_API_KEY ?? "",
