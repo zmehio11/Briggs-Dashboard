@@ -1,9 +1,10 @@
 import { format, subDays } from "date-fns";
 import { prisma } from "../lib/prisma.js";
 import { fetchDailyToastData } from "../services/toastClient.js";
-import { fetchDailyLabor } from "../services/pushOperationsClient.js";
+import { fetchDailyLaborDetail } from "../services/pushOperationsClient.js";
 import { fetchDailyCogs, fetchRecipeCosts } from "../services/marginEdgeClient.js";
 import { normalizeItemName } from "../lib/normalizeItemName.js";
+import { classifyPosition } from "../lib/classifyPosition.js";
 
 /**
  * Pulls one business date's data from Toast, Push Operations, and
@@ -66,24 +67,43 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
   });
 
   await runSource("push_operations", async () => {
-    const labor = await fetchDailyLabor(businessDate);
+    const { total, byPosition } = await fetchDailyLaborDetail(businessDate);
     await prisma.dailyLabor.upsert({
       where: { businessDate: date },
       create: {
         businessDate: date,
-        regularHours: labor.regularHours,
-        overtimeHours: labor.overtimeHours,
-        totalLaborCost: labor.totalLaborCost,
-        employeeCount: labor.employeeCount,
+        regularHours: total.regularHours,
+        overtimeHours: total.overtimeHours,
+        totalLaborCost: total.totalLaborCost,
+        employeeCount: total.employeeCount,
       },
       update: {
-        regularHours: labor.regularHours,
-        overtimeHours: labor.overtimeHours,
-        totalLaborCost: labor.totalLaborCost,
-        employeeCount: labor.employeeCount,
+        regularHours: total.regularHours,
+        overtimeHours: total.overtimeHours,
+        totalLaborCost: total.totalLaborCost,
+        employeeCount: total.employeeCount,
       },
     });
-    return 1;
+    for (const p of byPosition) {
+      await prisma.dailyLaborByPosition.upsert({
+        where: { businessDate_positionName: { businessDate: date, positionName: p.positionName } },
+        create: {
+          businessDate: date,
+          positionName: p.positionName,
+          group: classifyPosition(p.positionName),
+          hours: p.hours,
+          cost: p.cost,
+          employeeCount: p.employeeCount,
+        },
+        update: {
+          group: classifyPosition(p.positionName),
+          hours: p.hours,
+          cost: p.cost,
+          employeeCount: p.employeeCount,
+        },
+      });
+    }
+    return 1 + byPosition.length;
   });
 
   await runSource("margin_edge", async () => {

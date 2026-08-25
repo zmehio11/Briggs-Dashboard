@@ -78,6 +78,23 @@ model BudgetMonth {
   @@unique([year, month])
 }
 
+/// One row per business date + position, sourced from Push Operations.
+/// Lets the Labour tab break sales-vs-labor down by FOH/BOH for
+/// scheduling, not just a single daily total.
+model DailyLaborByPosition {
+  id           String   @id @default(cuid())
+  businessDate DateTime @db.Date
+  positionName String
+  group        String // FOH | BOH | Management | Other
+  hours        Decimal  @db.Decimal(8, 2)
+  cost         Decimal  @db.Decimal(12, 2)
+  employeeCount Int     @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, positionName])
+  @@index([businessDate])
+}
+
 /// Current theoretical cost per unit for every sellable recipe, sourced
 /// from MarginEdge. Refreshed on every nightly sync (whole-menu snapshot,
 /// not per business date) — matched against Toast item names by

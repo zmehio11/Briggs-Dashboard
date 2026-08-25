@@ -92,3 +92,41 @@ export async function fetchFlags(): Promise<FlagsResponse> {
   if (!res.ok) throw new Error(`Flags fetch failed: ${res.status}`);
   return res.json();
 }
+
+export type LaborGroup = "FOH" | "BOH" | "Management" | "Other";
+
+export interface LaborGroupStat {
+  avgCost: number;
+  avgHours: number;
+  pctOfSales: number | null;
+}
+
+export interface LaborDayStat {
+  day: string;
+  daysObserved: number;
+  avgNetSales: number;
+  avgLaborCost: number;
+  laborPctOfSales: number | null;
+  salesPerLaborHour: number | null;
+  byGroup: Record<LaborGroup, LaborGroupStat>;
+}
+
+export interface LaborPositionStat {
+  positionName: string;
+  group: LaborGroup;
+  avgHoursPerDay: number;
+  avgCostPerDay: number;
+}
+
+export interface LaborResponse {
+  daysObservedByWeekday: Record<string, number>;
+  budgetLaborPct: number | null;
+  byDayOfWeek: LaborDayStat[];
+  byPosition: LaborPositionStat[];
+}
+
+export async function fetchLabor(): Promise<LaborResponse> {
+  const res = await fetch(`/api/labor`);
+  if (!res.ok) throw new Error(`Labor fetch failed: ${res.status}`);
+  return res.json();
+}
