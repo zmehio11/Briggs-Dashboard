@@ -56,13 +56,27 @@ export const toastAdapter: PosAdapter = {
       fetchDailySalesRange(dateStr(priorStart), dateStr(priorEnd)),
     ]);
 
-    return current.map((row, i) => ({
-      date: row.businessDate,
-      revenue: row.netSales,
-      covers: row.covers,
-      priorPeriodRevenue: prior[i]?.netSales ?? 0,
-      priorPeriodCovers: prior[i]?.covers ?? 0,
-    }));
+    // Index the prior window by its own date offset (days before priorEnd)
+    // rather than array position -- a missing business date in either
+    // window (sync gap, day the sync started) must not shift every later
+    // comparison by one, which a plain current[i]/prior[i] zip would do.
+    const priorByOffset = new Map<number, RawDailySalesRow>();
+    for (const row of prior) {
+      const offset = Math.round((priorEnd.getTime() - new Date(row.businessDate).getTime()) / 86_400_000);
+      priorByOffset.set(offset, row);
+    }
+
+    return current.map((row) => {
+      const offset = Math.round((end.getTime() - new Date(row.businessDate).getTime()) / 86_400_000);
+      const priorRow = priorByOffset.get(offset);
+      return {
+        date: row.businessDate,
+        revenue: row.netSales,
+        covers: row.covers,
+        priorPeriodRevenue: priorRow?.netSales ?? 0,
+        priorPeriodCovers: priorRow?.covers ?? 0,
+      };
+    });
   },
   async getCustomerSegments() {
     return generateSegments();
