@@ -12,6 +12,13 @@ function dateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Meta's own response bodies embed access tokens in pagination URLs
+// (paging.previous/next), which sit outside the query param our log
+// aggregator redacts -- strip them before anything gets logged.
+function redactTokens(s: string): string {
+  return s.replace(/access_token=[^&"\\]+/g, "access_token=[REDACTED]");
+}
+
 async function fetchInstagramReach30d(igId: string, token: string): Promise<number | null> {
   const until = new Date();
   const since = new Date();
@@ -21,10 +28,9 @@ async function fetchInstagramReach30d(igId: string, token: string): Promise<numb
   const res = await fetch(url, { next: { revalidate: 3600 } });
   const body = await res.text();
   if (!res.ok) {
-    console.error("[social/instagram/insights] fetch failed", res.status, body);
+    console.error("[social/instagram/insights] fetch failed", res.status, redactTokens(body));
     return null;
   }
-  console.log("[social/instagram/insights] raw response", body);
   try {
     const data = JSON.parse(body);
     const total = data?.data?.[0]?.total_value?.value;
@@ -41,7 +47,7 @@ async function derivePageAccessToken(pageId: string, systemUserToken: string): P
   );
   const body = await res.text();
   if (!res.ok) {
-    console.error("[social/facebook/insights] derive page token failed", res.status, body);
+    console.error("[social/facebook/insights] derive page token failed", res.status, redactTokens(body));
     return null;
   }
   try {
@@ -64,10 +70,9 @@ async function fetchFacebookReach30d(pageId: string, systemUserToken: string): P
   const res = await fetch(url, { next: { revalidate: 3600 } });
   const body = await res.text();
   if (!res.ok) {
-    console.error("[social/facebook/insights] fetch failed", res.status, body);
+    console.error("[social/facebook/insights] fetch failed", res.status, redactTokens(body));
     return null;
   }
-  console.log("[social/facebook/insights] raw response", body);
   try {
     const data = JSON.parse(body);
     const totalValue = data?.data?.[0]?.total_value?.value;
@@ -89,7 +94,7 @@ async function fetchInstagramStats(): Promise<SocialPlatformStat | null> {
     { next: { revalidate: 3600 } }
   );
   if (!res.ok) {
-    console.error("[social/instagram] fetch failed", res.status, await res.text());
+    console.error("[social/instagram] fetch failed", res.status, redactTokens(await res.text()));
     return null;
   }
   const data = await res.json();
@@ -115,7 +120,7 @@ async function fetchFacebookStats(): Promise<SocialPlatformStat | null> {
     { next: { revalidate: 3600 } }
   );
   if (!res.ok) {
-    console.error("[social/facebook] fetch failed", res.status, await res.text());
+    console.error("[social/facebook] fetch failed", res.status, redactTokens(await res.text()));
     return null;
   }
   const data = await res.json();
@@ -134,6 +139,10 @@ async function fetchFacebookStats(): Promise<SocialPlatformStat | null> {
 /**
  * Real for Instagram + Facebook follower counts and 30-day reach (Meta
  * Graph API, verified against Briggs' actual Page/IG Business Account).
+ * Facebook reach uses page_total_media_view_unique (the replacement for
+ * the deprecated page_impressions_unique) via a Page Access Token derived
+ * on each call from the System User token -- the Insights endpoint
+ * rejects the System User token directly even with full asset access.
  * Still placeholder:
  *
  * - followerDelta30d / engagementRate / postsLast30d are null (rendered

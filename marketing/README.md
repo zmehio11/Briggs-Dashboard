@@ -8,9 +8,9 @@ repo for convenience.
 
 **Current status: Phase 2, in progress.** Revenue & Covers is **live**,
 backed by the ops dashboard's Toast data (see "POS (Toast)" below).
-Social Media Performance follower counts are **live** (Meta Graph API —
-see "Social: Meta" below); reach/engagement/posts on that same page are
-still mock. Customer Segments, Promo Performance, and everything on the
+Social Media Performance follower counts and 30-day reach are **live**
+(Meta Graph API — see "Social: Meta" below); engagement rate and posts
+count on that same page are still mock. Customer Segments, Promo Performance, and everything on the
 other 6 pages still render deterministic mock data — internally consistent (the Health
 Score is computed from the same numbers the detail pages show, not a
 separate random figure), but fake, until their adapters go live one at a
@@ -92,7 +92,7 @@ Feeds: the "OpenTable" row in Marketing Attribution (booking-referral volume).
 
 ### Social: Meta (Instagram + Facebook) — PARTIALLY LIVE
 
-Follower counts are real. Requires a Meta Developer app with **Instagram
+Follower counts and 30-day reach are real. Requires a Meta Developer app with **Instagram
 Graph API** access (not the legacy Basic Display API — that one can't read
 business insights), and the Instagram account must be a Business/Creator
 account **linked to a Facebook Page** (a hard requirement of the Instagram
@@ -117,21 +117,37 @@ at the API level).
   → Users → System Users → create one → assign it the Facebook Page (with
   Instagram access) as an asset → Generate New Token with the same 5
   scopes below, expiration set to **Never**.
-  - Scopes needed either way: `pages_read_engagement`, `pages_show_list`,
-    `instagram_basic`, `instagram_manage_insights`, `business_management`.
+  - Scopes needed: `pages_read_engagement`, `pages_show_list`,
+    `instagram_basic`, `instagram_manage_insights`, `business_management`,
+    and `read_insights` (the last one is required specifically for the
+    Page/IG Insights endpoints — the other five are enough for follower
+    counts but Insights calls fail with a scope/permission error without it).
 - `META_FACEBOOK_PAGE_ID` / `META_INSTAGRAM_BUSINESS_ACCOUNT_ID` — from
   that same `me/accounts` call and a follow-up
   `GET /{page-id}?fields=instagram_business_account` once the Page and IG
   account are linked.
 
-**Still mock:** follower delta, reach, engagement rate, and posts count
-(`social.ts` returns `null` for these rather than fake numbers) — real
-values need the Instagram/Facebook **Insights API**, which wasn't wired up
-blind since its metric names have a real history of breaking changes
-across API versions (`impressions` was deprecated for many accounts, for
-instance). Worth live-testing against Briggs' actual account before
-trusting it, the same way follower counts were verified here. `getPostTrend`
-(the reach-by-platform chart) is fully mock for the same reason.
+**30-day reach**, wired in `social.ts`:
+- Instagram: `GET /{ig-id}/insights?metric=reach&metric_type=total_value`
+  — confirmed live against Briggs' account.
+- Facebook: `GET /{page-id}/insights?metric=page_total_media_view_unique`.
+  Meta deprecated the old `page_impressions_unique` metric on 2026-06-15;
+  this is its replacement. Also, this endpoint rejects the System User
+  token directly (`(#190) This method must be called with a Page Access
+  Token`) even though the same token works fine for plain field reads
+  like `fan_count` — the fix is to first call
+  `GET /{page-id}?fields=access_token` with the System User token to
+  derive a proper Page Access Token, then use that derived token for the
+  `/insights` call (see `derivePageAccessToken` in `social.ts`). Briggs'
+  Facebook Page currently returns real `0`s here since it has no native
+  video/media content of its own (it exists only to link the Instagram
+  account) — that's an accurate result, not a bug.
+
+**Still mock:** follower delta, engagement rate, and posts count
+(`social.ts` returns `null` for these rather than fake numbers) — these
+need per-media Insights aggregation, a bigger lift than the account-level
+reach metric wired here. `getPostTrend` (the reach-by-platform chart) is
+fully mock for the same reason.
 
 Feeds: Social Media Performance.
 
