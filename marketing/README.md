@@ -105,13 +105,20 @@ at the API level).
   with the "Manage messaging & content on Instagram" and "Manage everything
   on your Page" use cases — no App Review needed, since this only ever reads
   Briggs' own Page/IG account, not other businesses' data.
-- `META_PAGE_ACCESS_TOKEN` — a long-lived Page access token (generated via
-  Graph API Explorer: get a User token with `pages_read_engagement`,
-  `pages_show_list`, `instagram_basic`, `instagram_manage_insights`,
-  `business_management`, extend it via the Access Token Debugger's "Extend
-  Access Token" button, then call `me/accounts` to get the Page's own
-  token). Expires in ~60 days — will need periodic renewal, or upgrading to
-  a Business Manager System User token for one that doesn't expire.
+- `META_PAGE_ACCESS_TOKEN` — a **Business Manager System User token**, set
+  to never expire. This is the only approach that actually worked: a
+  regular User token extended via the Access Token Debugger's "Extend
+  Access Token" button *looked* long-lived (~60 days) in the debugger, but
+  the Page token pulled from `me/accounts` using it died within about an
+  hour anyway — a Page token doesn't retroactively inherit a later
+  extension of the User token it came from, and re-pulling it after
+  extending didn't reliably fix that either. The durable fix: Business
+  Settings → Accounts → Apps → connect this app to the Business Portfolio
+  → Users → System Users → create one → assign it the Facebook Page (with
+  Instagram access) as an asset → Generate New Token with the same 5
+  scopes below, expiration set to **Never**.
+  - Scopes needed either way: `pages_read_engagement`, `pages_show_list`,
+    `instagram_basic`, `instagram_manage_insights`, `business_management`.
 - `META_FACEBOOK_PAGE_ID` / `META_INSTAGRAM_BUSINESS_ACCOUNT_ID` — from
   that same `me/accounts` call and a follow-up
   `GET /{page-id}?fields=instagram_business_account` once the Page and IG
