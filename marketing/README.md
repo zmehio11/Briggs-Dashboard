@@ -6,14 +6,16 @@ operations dashboard (`../backend` + `../frontend`) — different purpose
 (Next.js + Tailwind + Recharts, deployed as its own Vercel project), same
 repo for convenience.
 
-**Current status: Phase 1.** The dashboard renders on realistic, deterministic
-mock data — every number is fake but internally consistent (the Health
+**Current status: Phase 2, in progress.** Revenue & Covers is now **live**,
+backed by the ops dashboard's Toast data (see "POS (Toast)" below).
+Customer Segments, Promo Performance, and everything on the other 7 pages
+still render deterministic mock data — internally consistent (the Health
 Score is computed from the same numbers the detail pages show, not a
-separate random figure). The **Marketing Engine** (content calendar
-generator, review response drafts, campaign brief generator, community
-outreach tracker, VIP CRM, weekly auto-report) described in the original
-spec is **not built yet** — this phase is the dashboard + the integration
-adapters, stubbed and ready to wire up one at a time.
+separate random figure), but fake, until their adapters go live one at a
+time the same way. The **Marketing Engine** (content calendar generator,
+review response drafts, campaign brief generator, community outreach
+tracker, VIP CRM, weekly auto-report) described in the original spec is
+**not built yet** — that starts once every adapter here is real.
 
 ## Quick start
 
@@ -55,21 +57,25 @@ src/lib/
 
 Copy `.env.example` to `.env.local` and fill in as you wire each one up.
 
-### POS (Toast)
+### POS (Toast) — LIVE
 
-The Briggs **operations dashboard** (`../backend`) already has a working,
-verified Toast integration for this exact restaurant —
-`../backend/src/services/toastClient.ts` has the real auth flow and order
-field mappings, hard-won against this account's actual API responses.
-**Reuse it** rather than re-registering a second Toast app: either call
-that backend's API from here over HTTP, or extract the shared client into
-a package both apps import.
+Revenue & Covers calls the Briggs **operations dashboard's** own API
+(`GET /api/daily-sales` on `../backend`) rather than talking to Toast
+directly — that backend already has a working, verified Toast integration
+for this exact restaurant (`../backend/src/services/toastClient.ts`, hard-won
+against this account's actual API responses), so there was no reason to
+re-implement Toast auth here.
 
-- `TOAST_CLIENT_ID` / `TOAST_CLIENT_SECRET` — Standard API access
-  credentials, from Toast's developer portal or your Toast partner rep.
-- `TOAST_RESTAURANT_GUID` — this restaurant's GUID (not the client ID —
-  see the note in `../backend/README.md` if you mix them up like we did
-  once already).
+- `OPS_BACKEND_URL` — defaults to the deployed backend's Railway URL;
+  only override this if that backend moves.
+- No Toast credentials needed in *this* app.
+
+**Still mock** within `pos.ts`: `getCustomerSegments()` and
+`getPromoPerformance()`. Both need data the ops backend doesn't track
+yet — per-guest identity for new/repeat/VIP segmentation, and promo-tagged
+sales for baseline-vs-during uplift. Wiring these for real is new work on
+`../backend`'s Toast integration (guest profiles, a promo-code convention
+in Toast), not just a new adapter call here.
 
 Feeds: Revenue & Covers, Customer Segments, Promo Performance.
 
