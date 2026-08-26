@@ -8,6 +8,54 @@ export interface SocialAdapter {
 
 const GRAPH_API_VERSION = "v21.0";
 
+function dateStr(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchInstagramReach30d(igId: string, token: string): Promise<number | null> {
+  const until = new Date();
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - 30);
+
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${igId}/insights?metric=reach&period=day&metric_type=total_value&since=${dateStr(since)}&until=${dateStr(until)}&access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url, { next: { revalidate: 3600 } });
+  const body = await res.text();
+  if (!res.ok) {
+    console.error("[social/instagram/insights] fetch failed", res.status, body);
+    return null;
+  }
+  console.log("[social/instagram/insights] raw response", body);
+  try {
+    const data = JSON.parse(body);
+    const total = data?.data?.[0]?.total_value?.value;
+    return typeof total === "number" ? total : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFacebookReach30d(pageId: string, token: string): Promise<number | null> {
+  const until = new Date();
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - 30);
+
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/insights?metric=page_impressions_unique&period=day&since=${dateStr(since)}&until=${dateStr(until)}&access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url, { next: { revalidate: 3600 } });
+  const body = await res.text();
+  if (!res.ok) {
+    console.error("[social/facebook/insights] fetch failed", res.status, body);
+    return null;
+  }
+  console.log("[social/facebook/insights] raw response", body);
+  try {
+    const data = JSON.parse(body);
+    const values: number[] = (data?.data?.[0]?.values ?? []).map((v: any) => v.value ?? 0);
+    return values.length > 0 ? values.reduce((s, v) => s + v, 0) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchInstagramStats(): Promise<SocialPlatformStat | null> {
   const igId = process.env.META_INSTAGRAM_BUSINESS_ACCOUNT_ID;
   const token = process.env.META_PAGE_ACCESS_TOKEN;
@@ -22,12 +70,13 @@ async function fetchInstagramStats(): Promise<SocialPlatformStat | null> {
     return null;
   }
   const data = await res.json();
+  const reach30d = await fetchInstagramReach30d(igId, token);
 
   return {
     platform: "Instagram",
     followers: data.followers_count ?? 0,
     followerDelta30d: null,
-    reach30d: null,
+    reach30d,
     engagementRate: null,
     postsLast30d: null,
   };
@@ -47,29 +96,29 @@ async function fetchFacebookStats(): Promise<SocialPlatformStat | null> {
     return null;
   }
   const data = await res.json();
+  const reach30d = await fetchFacebookReach30d(pageId, token);
 
   return {
     platform: "Facebook",
     followers: data.fan_count ?? 0,
     followerDelta30d: null,
-    reach30d: null,
+    reach30d,
     engagementRate: null,
     postsLast30d: null,
   };
 }
 
 /**
- * Real for Instagram + Facebook follower counts (Meta Graph API, verified
- * against Briggs' actual Page/IG Business Account). Everything else on
- * this adapter is still a placeholder:
+ * Real for Instagram + Facebook follower counts and 30-day reach (Meta
+ * Graph API, verified against Briggs' actual Page/IG Business Account).
+ * Still placeholder:
  *
- * - followerDelta30d / reach30d / engagementRate / postsLast30d are all
- *   null (rendered as "—" in the UI) rather than fake numbers -- getting
- *   these for real needs either the Instagram/Facebook Insights API
- *   (which has a real history of breaking-change metric renames, so
- *   deliberately not wired blind without live testing) or our own daily
- *   snapshot table to compute deltas from, which doesn't exist yet.
- * - getPostTrend is still fully mock -- same Insights API dependency.
+ * - followerDelta30d / engagementRate / postsLast30d are null (rendered
+ *   as "—") -- delta needs our own daily snapshot table (doesn't exist
+ *   yet); engagement rate needs per-media insights aggregation, a bigger
+ *   lift than the account-level reach metric wired here.
+ * - getPostTrend (the daily reach-by-platform chart) is still fully mock
+ *   -- same per-media aggregation gap.
  * - TikTok has no account yet, so it stays mock.
  * - Google Business isn't a "social platform" in the API sense; its data
  *   lives on the Local Visibility page via the GBP adapter instead.
