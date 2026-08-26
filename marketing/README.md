@@ -14,10 +14,11 @@ count on that same page are still mock. Customer Segments, Promo Performance, an
 other 6 pages still render deterministic mock data — internally consistent (the Health
 Score is computed from the same numbers the detail pages show, not a
 separate random figure), but fake, until their adapters go live one at a
-time the same way. The **Marketing Engine** (content calendar generator,
-review response drafts, campaign brief generator, community outreach
-tracker, VIP CRM, weekly auto-report) described in the original spec is
-**not built yet** — that starts once every adapter here is real.
+time the same way. The **Marketing Engine** described in the original
+spec is starting: the Content Calendar generator is live (see "Marketing
+Engine (Phase 2)" below); the rest (review response drafts, campaign
+brief generator, community outreach tracker, VIP CRM, weekly
+auto-report) are still to come.
 
 ## Quick start
 
@@ -242,12 +243,27 @@ as its **own** Vercel project (separate from the ops dashboard's Vercel
 project), pointing its root directory at `marketing/`, with the env vars
 above set in that project's settings.
 
-## What's next (Phase 2 — not built)
+## Marketing Engine (Phase 2)
 
-The Marketing Engine automation/content layer from the original spec:
-content calendar generator, review response drafts, campaign brief
-generator, local community outreach tracker, a simple CRM for repeat/VIP
-customers, and the weekly auto-generated report. These weren't built in
-this pass — ask for them once the dashboard + a few real adapters are
-live, since several of them (review drafts, the weekly report) read from
-the same adapters this phase already set up.
+The automation/content layer from the original spec, built on top of the
+adapters above.
+
+- **Content Calendar** (`/content-calendar`, `src/lib/contentCalendar.ts`)
+  — **built.** A 14-day content plan, generated (not hardcoded) from the
+  same adapters every dashboard page reads: the weakest day of the week
+  from POS revenue history, the best-performing past promo, the top
+  positive review theme, a standout recent review, and (once Instagram
+  and Facebook reach are wired, as they are now) reach-based story/repost
+  ideas. Every suggestion cites the real number behind it. Gets more
+  specific automatically as more adapters go live — e.g. once GBP local
+  visibility is real, the Google Business day's rationale would cite
+  actual search-impression numbers instead of staying generic.
+- **Weekly auto-report**, **campaign brief generator**, **community
+  outreach tracker** — not built yet, but unblocked: they can compose
+  from today's adapters the same way the Content Calendar does, without
+  waiting on Google/OpenTable approval.
+- **Review response drafts** — needs live review data first (still mock;
+  Google's API access is pending approval, Yelp was skipped).
+- **VIP CRM** — needs Toast per-guest identity, which the ops backend
+  doesn't track yet (same gap blocking Customer Segments and Promo
+  Performance from going fully live).

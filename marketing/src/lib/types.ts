@@ -114,3 +114,13 @@ export interface HealthScore {
   components: HealthScoreComponent[];
   headline: string;
 }
+
+export type ContentCalendarPlatform = "Instagram" | "Facebook" | "Google Business" | "Email";
+
+export interface ContentCalendarItem {
+  date: string; // YYYY-MM-DD
+  platform: ContentCalendarPlatform;
+  format: string; // e.g. "Feed post", "Story", "Google Post", "Email blast"
+  idea: string;
+  rationale: string; // cites the actual data point driving this suggestion
+}
