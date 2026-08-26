@@ -59,13 +59,23 @@ export default function App() {
           <div className="eyebrow">Briggs</div>
           <h1>Sales, Labor &amp; Cost of Sales</h1>
         </div>
-        <nav className="period-toggle">
-          {PAGES.map((p) => (
-            <button key={p.key} className={p.key === page ? "active" : ""} onClick={() => setPage(p.key)}>
-              {p.label}
-            </button>
-          ))}
-        </nav>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <nav className="period-toggle">
+            {PAGES.map((p) => (
+              <button key={p.key} className={p.key === page ? "active" : ""} onClick={() => setPage(p.key)}>
+                {p.label}
+              </button>
+            ))}
+          </nav>
+          <a
+            href="https://briggs-dashboard-marketing.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 12, color: "var(--text-muted)" }}
+          >
+            Marketing Dashboard ↗
+          </a>
+        </div>
       </header>
 
       {page === "items" && <ItemsPage />}
