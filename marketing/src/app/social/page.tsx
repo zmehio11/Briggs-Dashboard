@@ -21,14 +21,16 @@ export default async function SocialPage() {
             label={p.platform}
             value={p.platform === "Google Business" ? "—" : p.followers.toLocaleString()}
             delta={
-              p.platform !== "Google Business" && p.followers > 0 ? (
+              p.platform !== "Google Business" && p.followerDelta30d != null && p.followers > 0 ? (
                 <DeltaBadge pct={(p.followerDelta30d / p.followers) * 100} />
               ) : undefined
             }
             sub={
               p.platform === "Google Business"
                 ? "See Local Visibility page"
-                : `${(p.engagementRate * 100).toFixed(1)}% engagement · ${p.postsLast30d} posts (30d)`
+                : p.engagementRate != null && p.postsLast30d != null
+                  ? `${(p.engagementRate * 100).toFixed(1)}% engagement · ${p.postsLast30d} posts (30d)`
+                  : "Engagement/reach not yet tracked"
             }
           />
         ))}

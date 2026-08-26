@@ -30,8 +30,12 @@ export async function getHealthScore(): Promise<HealthScore> {
   const avgRating = reviews.reduce((s, r) => s + r.averageRating, 0) / reviews.length;
   const reviewScore = Math.max(0, Math.min(100, (avgRating - 3) * 50));
 
-  const socialOnly = social.filter((s) => s.platform !== "Google Business");
-  const avgEngagement = socialOnly.reduce((s, p) => s + p.engagementRate, 0) / socialOnly.length;
+  // Only platforms with a real (non-null) engagement rate count toward
+  // this -- Instagram/Facebook engagement isn't tracked yet (see social.ts).
+  const engagementRates = social
+    .map((p) => p.engagementRate)
+    .filter((rate): rate is number => rate != null);
+  const avgEngagement = engagementRates.length > 0 ? engagementRates.reduce((s, r) => s + r, 0) / engagementRates.length : 0;
   const socialScore = Math.max(0, Math.min(100, avgEngagement * 1000));
 
   const avgRedemption = campaigns.reduce((s, c) => s + c.redemptionRate, 0) / campaigns.length;

@@ -6,10 +6,12 @@ operations dashboard (`../backend` + `../frontend`) — different purpose
 (Next.js + Tailwind + Recharts, deployed as its own Vercel project), same
 repo for convenience.
 
-**Current status: Phase 2, in progress.** Revenue & Covers is now **live**,
+**Current status: Phase 2, in progress.** Revenue & Covers is **live**,
 backed by the ops dashboard's Toast data (see "POS (Toast)" below).
-Customer Segments, Promo Performance, and everything on the other 7 pages
-still render deterministic mock data — internally consistent (the Health
+Social Media Performance follower counts are **live** (Meta Graph API —
+see "Social: Meta" below); reach/engagement/posts on that same page are
+still mock. Customer Segments, Promo Performance, and everything on the
+other 6 pages still render deterministic mock data — internally consistent (the Health
 Score is computed from the same numbers the detail pages show, not a
 separate random figure), but fake, until their adapters go live one at a
 time the same way. The **Marketing Engine** (content calendar generator,
@@ -88,19 +90,41 @@ Feeds: Revenue & Covers, Customer Segments, Promo Performance.
 
 Feeds: the "OpenTable" row in Marketing Attribution (booking-referral volume).
 
-### Social: Meta (Instagram + Facebook)
+### Social: Meta (Instagram + Facebook) — PARTIALLY LIVE
 
-Requires a Meta Developer app with **Instagram Graph API** access (not the
-legacy Basic Display API — that one can't read business insights).
+Follower counts are real. Requires a Meta Developer app with **Instagram
+Graph API** access (not the legacy Basic Display API — that one can't read
+business insights), and the Instagram account must be a Business/Creator
+account **linked to a Facebook Page** (a hard requirement of the Instagram
+Graph API — Briggs didn't have a Page originally, so one was created and
+linked via the Page's own Settings → Linked Accounts; Accounts Center's
+"Add accounts" flow looked like it linked them but didn't actually connect
+at the API level).
 
-- Create an app at [developers.facebook.com](https://developers.facebook.com).
-- OAuth scopes needed: `pages_read_engagement`, `pages_show_list`,
-  `instagram_basic`, `instagram_manage_insights`, `business_management`.
-- `META_PAGE_ACCESS_TOKEN` — a long-lived Page access token (exchange a
-  short-lived user token for this; Page tokens don't expire unless the
-  underlying user token is revoked).
-- `META_INSTAGRAM_BUSINESS_ACCOUNT_ID` — the IG Business account linked to
-  the Facebook Page (fetch via `GET /{page-id}?fields=instagram_business_account`).
+- App created at [developers.facebook.com](https://developers.facebook.com)
+  with the "Manage messaging & content on Instagram" and "Manage everything
+  on your Page" use cases — no App Review needed, since this only ever reads
+  Briggs' own Page/IG account, not other businesses' data.
+- `META_PAGE_ACCESS_TOKEN` — a long-lived Page access token (generated via
+  Graph API Explorer: get a User token with `pages_read_engagement`,
+  `pages_show_list`, `instagram_basic`, `instagram_manage_insights`,
+  `business_management`, extend it via the Access Token Debugger's "Extend
+  Access Token" button, then call `me/accounts` to get the Page's own
+  token). Expires in ~60 days — will need periodic renewal, or upgrading to
+  a Business Manager System User token for one that doesn't expire.
+- `META_FACEBOOK_PAGE_ID` / `META_INSTAGRAM_BUSINESS_ACCOUNT_ID` — from
+  that same `me/accounts` call and a follow-up
+  `GET /{page-id}?fields=instagram_business_account` once the Page and IG
+  account are linked.
+
+**Still mock:** follower delta, reach, engagement rate, and posts count
+(`social.ts` returns `null` for these rather than fake numbers) — real
+values need the Instagram/Facebook **Insights API**, which wasn't wired up
+blind since its metric names have a real history of breaking changes
+across API versions (`impressions` was deprecated for many accounts, for
+instance). Worth live-testing against Briggs' actual account before
+trusting it, the same way follower counts were verified here. `getPostTrend`
+(the reach-by-platform chart) is fully mock for the same reason.
 
 Feeds: Social Media Performance.
 

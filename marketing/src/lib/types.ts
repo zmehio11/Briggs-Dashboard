@@ -22,10 +22,12 @@ export type SocialPlatform = "Instagram" | "Facebook" | "TikTok" | "Google Busin
 export interface SocialPlatformStat {
   platform: SocialPlatform;
   followers: number;
-  followerDelta30d: number;
-  reach30d: number;
-  engagementRate: number; // 0-1
-  postsLast30d: number;
+  // null = not yet tracked for real (needs a historical snapshot store we
+  // haven't built) rather than a fake number pretending to be real.
+  followerDelta30d: number | null;
+  reach30d: number | null;
+  engagementRate: number | null; // 0-1
+  postsLast30d: number | null;
 }
 
 export interface SocialPostPerformance {
