@@ -39,7 +39,7 @@ async function fetchFacebookReach30d(pageId: string, token: string): Promise<num
   const since = new Date();
   since.setUTCDate(since.getUTCDate() - 30);
 
-  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/insights?metric=page_impressions_unique&period=day&since=${dateStr(since)}&until=${dateStr(until)}&access_token=${encodeURIComponent(token)}`;
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/insights?metric=page_total_media_view_unique&period=day&metric_type=total_value&since=${dateStr(since)}&until=${dateStr(until)}&access_token=${encodeURIComponent(token)}`;
   const res = await fetch(url, { next: { revalidate: 3600 } });
   const body = await res.text();
   if (!res.ok) {
@@ -49,6 +49,8 @@ async function fetchFacebookReach30d(pageId: string, token: string): Promise<num
   console.log("[social/facebook/insights] raw response", body);
   try {
     const data = JSON.parse(body);
+    const totalValue = data?.data?.[0]?.total_value?.value;
+    if (typeof totalValue === "number") return totalValue;
     const values: number[] = (data?.data?.[0]?.values ?? []).map((v: any) => v.value ?? 0);
     return values.length > 0 ? values.reduce((s, v) => s + v, 0) : null;
   } catch {
