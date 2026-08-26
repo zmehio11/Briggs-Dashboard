@@ -15,7 +15,12 @@ const LINKS = [
   { href: "/segments", label: "Customer Segments" },
 ];
 
-const ENGINE_LINKS = [{ href: "/content-calendar", label: "Content Calendar" }];
+const ENGINE_LINKS = [
+  { href: "/content-calendar", label: "Content Calendar" },
+  { href: "/weekly-report", label: "Weekly Report" },
+  { href: "/campaign-brief", label: "Campaign Brief" },
+  { href: "/community-outreach", label: "Community Outreach" },
+];
 
 function NavLink({ href, label, active }: { href: string; label: string; active: boolean }) {
   return (

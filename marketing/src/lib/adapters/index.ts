@@ -7,3 +7,4 @@ export { emailAdapter } from "./email";
 export { reviewsAdapter } from "./reviews";
 export { gbpAdapter } from "./gbp";
 export { attributionAdapter } from "./attribution";
+export { outreachAdapter } from "./outreach";

@@ -124,3 +124,42 @@ export interface ContentCalendarItem {
   idea: string;
   rationale: string; // cites the actual data point driving this suggestion
 }
+
+export interface WeeklyReport {
+  weekStart: string;
+  weekEnd: string;
+  revenue: { total: number; deltaPct: number; covers: number; avgCheck: number };
+  reviews: { avgRating: number; totalReviews: number; bestReview: RecentReview | null };
+  social: { platform: SocialPlatform; followers: number; reach30d: number | null }[];
+  topCampaign: CampaignStat | null;
+  visibility: { views: number; directionRequests: number; deltaPct: number } | null;
+  topAttributionChannel: AttributionChannel | null;
+  priorities: string[];
+  headline: string;
+}
+
+export type OutreachType = "Partnership" | "Sponsorship" | "Influencer" | "Local Press" | "Community Event" | "Other";
+export type OutreachStatus = "Not Contacted" | "Contacted" | "In Discussion" | "Active" | "Declined";
+
+export interface OutreachContact {
+  id: string;
+  name: string;
+  organization: string | null;
+  type: OutreachType;
+  status: OutreachStatus;
+  contactInfo: string | null;
+  notes: string | null;
+  lastContactDate: string | null; // YYYY-MM-DD
+  nextActionDate: string | null; // YYYY-MM-DD
+}
+
+export interface CampaignBrief {
+  objective: string;
+  audience: string;
+  channels: string[];
+  offer: string;
+  budgetRange: string;
+  timeline: string;
+  successMetric: string;
+  rationale: string[];
+}
