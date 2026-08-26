@@ -31,6 +31,78 @@ const QUADRANT_HINT: Record<Quadrant, string> = {
   Dog: "neither sells nor earns — candidate to cut",
 };
 
+type SortDir = "asc" | "desc";
+interface SortState {
+  key: string;
+  dir: SortDir;
+}
+
+/** Sorts nulls last regardless of direction -- a missing value isn't "low". */
+function sortByKey<T>(list: T[], sort: SortState, getValue: (item: T, key: string) => string | number | null): T[] {
+  return [...list].sort((a, b) => {
+    const av = getValue(a, sort.key);
+    const bv = getValue(b, sort.key);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = typeof av === "string" && typeof bv === "string" ? av.localeCompare(bv) : (av as number) - (bv as number);
+    return sort.dir === "asc" ? cmp : -cmp;
+  });
+}
+
+function SortableTh({
+  label,
+  sortKey,
+  defaultDir,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: string;
+  defaultDir: SortDir;
+  sort: SortState;
+  onSort: (key: string, defaultDir: SortDir) => void;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th className={`sortable${active ? " active" : ""}`} onClick={() => onSort(sortKey, defaultDir)}>
+      {label}
+      {active ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+    </th>
+  );
+}
+
+function useSort(initial: SortState) {
+  const [sort, setSort] = useState<SortState>(initial);
+  const onSort = (key: string, defaultDir: SortDir) => {
+    setSort((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: defaultDir }));
+  };
+  return { sort, onSort };
+}
+
+function menuEngineeringValue(item: ItemStat, key: string): string | number | null {
+  switch (key) {
+    case "itemName":
+      return item.itemName;
+    case "categoryName":
+      return item.categoryName ?? "";
+    case "totalQuantity":
+      return item.totalQuantity;
+    case "totalRevenue":
+      return item.totalRevenue;
+    case "unitCost":
+      return item.unitCost;
+    case "margin":
+      return item.margin;
+    case "marginPct":
+      return item.marginPct;
+    case "quadrant":
+      return item.quadrant ?? "";
+    default:
+      return null;
+  }
+}
+
 export function ItemsPage() {
   const [items, setItems] = useState<ItemStat[]>([]);
   const [daysObserved, setDaysObserved] = useState<Record<string, number>>({});
@@ -39,6 +111,9 @@ export function ItemsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<CategoryGroup | "All">("All");
+
+  const menuSort = useSort({ key: "marginPct", dir: "desc" });
+  const weekdaySort = useSort({ key: "totalQuantity", dir: "desc" });
 
   useEffect(() => {
     setLoading(true);
@@ -60,13 +135,21 @@ export function ItemsPage() {
     () => (filter === "All" ? items : items.filter((i) => i.categoryGroup === filter)),
     [items, filter]
   );
-  const byMargin = useMemo(
-    () =>
-      [...filtered]
-        .filter((i) => i.marginPct != null)
-        .sort((a, b) => (b.marginPct as number) - (a.marginPct as number)),
-    [filtered]
+  const sortedForMenuEngineering = useMemo(
+    () => sortByKey(filtered.filter((i) => i.marginPct != null), menuSort.sort, menuEngineeringValue),
+    [filtered, menuSort.sort]
   );
+  const sortedForWeekday = useMemo(() => {
+    const getValue = (item: ItemStat, key: string): string | number | null => {
+      if (key === "itemName") return item.itemName;
+      if (key === "categoryName") return item.categoryName ?? "";
+      if (key === "totalQuantity") return item.totalQuantity;
+      if (key === "totalRevenue") return item.totalRevenue;
+      const dayMatch = item.byDayOfWeek.find((d) => d.day === key);
+      return dayMatch?.avgQuantity ?? null;
+    };
+    return sortByKey(filtered, weekdaySort.sort, getValue);
+  }, [filtered, weekdaySort.sort]);
 
   return (
     <div>
@@ -96,24 +179,24 @@ export function ItemsPage() {
             Cost matched to {matchedCostCount} of {matchedCostCount + unmatchedCostCount} items sold
             (matched by name against MarginEdge's recipe costs — items with a different name in each
             system won't match). Star / Plowhorse / Puzzle / Dog splits on the median quantity and
-            margin % among matched items.
+            margin % among matched items. Click a column to sort.
           </p>
           <div className="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Item</th>
-                  <th>Category</th>
-                  <th>Qty Sold</th>
-                  <th>Revenue</th>
-                  <th>Unit Cost</th>
-                  <th>Margin</th>
-                  <th>Margin %</th>
-                  <th>Quadrant</th>
+                  <SortableTh label="Item" sortKey="itemName" defaultDir="asc" sort={menuSort.sort} onSort={menuSort.onSort} />
+                  <SortableTh label="Category" sortKey="categoryName" defaultDir="asc" sort={menuSort.sort} onSort={menuSort.onSort} />
+                  <SortableTh label="Qty Sold" sortKey="totalQuantity" defaultDir="desc" sort={menuSort.sort} onSort={menuSort.onSort} />
+                  <SortableTh label="Revenue" sortKey="totalRevenue" defaultDir="desc" sort={menuSort.sort} onSort={menuSort.onSort} />
+                  <SortableTh label="Unit Cost" sortKey="unitCost" defaultDir="desc" sort={menuSort.sort} onSort={menuSort.onSort} />
+                  <SortableTh label="Margin" sortKey="margin" defaultDir="desc" sort={menuSort.sort} onSort={menuSort.onSort} />
+                  <SortableTh label="Margin %" sortKey="marginPct" defaultDir="desc" sort={menuSort.sort} onSort={menuSort.onSort} />
+                  <SortableTh label="Quadrant" sortKey="quadrant" defaultDir="asc" sort={menuSort.sort} onSort={menuSort.onSort} />
                 </tr>
               </thead>
               <tbody>
-                {byMargin.map((item) => (
+                {sortedForMenuEngineering.map((item) => (
                   <tr key={item.itemGuid}>
                     <td>{item.itemName}</td>
                     <td>{item.categoryName ?? "—"}</td>
@@ -138,31 +221,32 @@ export function ItemsPage() {
           <h2>Average Items Sold by Day of Week</h2>
           <p className="subtext">
             Averaged across all synced history —{" "}
-            {weekdays.map((d) => `${WEEKDAY_ABBR[d]} (${daysObserved[d] ?? 0})`).join(", ")} days observed.
+            {weekdays.map((d) => `${WEEKDAY_ABBR[d]} (${daysObserved[d] ?? 0})`).join(", ")} days observed. Click a column to sort.
           </p>
           <div className="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Item</th>
-                  <th>Category</th>
-                  <th>Total Sold</th>
-                  <th>Total Revenue</th>
+                  <SortableTh label="Item" sortKey="itemName" defaultDir="asc" sort={weekdaySort.sort} onSort={weekdaySort.onSort} />
+                  <SortableTh label="Category" sortKey="categoryName" defaultDir="asc" sort={weekdaySort.sort} onSort={weekdaySort.onSort} />
+                  <SortableTh label="Total Sold" sortKey="totalQuantity" defaultDir="desc" sort={weekdaySort.sort} onSort={weekdaySort.onSort} />
+                  <SortableTh label="Total Revenue" sortKey="totalRevenue" defaultDir="desc" sort={weekdaySort.sort} onSort={weekdaySort.onSort} />
                   {weekdays.map((d) => (
-                    <th key={d}>{WEEKDAY_ABBR[d]}</th>
+                    <SortableTh key={d} label={WEEKDAY_ABBR[d]} sortKey={d} defaultDir="desc" sort={weekdaySort.sort} onSort={weekdaySort.onSort} />
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((item) => (
+                {sortedForWeekday.map((item) => (
                   <tr key={item.itemGuid}>
                     <td>{item.itemName}</td>
                     <td>{item.categoryName ?? "—"}</td>
                     <td>{item.totalQuantity}</td>
                     <td>{currency(item.totalRevenue)}</td>
-                    {item.byDayOfWeek.map((d) => (
-                      <td key={d.day}>{d.avgQuantity == null ? "—" : d.avgQuantity.toFixed(1)}</td>
-                    ))}
+                    {weekdays.map((d) => {
+                      const stat = item.byDayOfWeek.find((s) => s.day === d);
+                      return <td key={d}>{stat?.avgQuantity == null ? "—" : stat.avgQuantity.toFixed(1)}</td>;
+                    })}
                   </tr>
                 ))}
               </tbody>

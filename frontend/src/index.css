@@ -216,6 +216,19 @@ th {
   font-weight: 500;
 }
 
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable:hover {
+  color: var(--text);
+}
+
+th.sortable.active {
+  color: var(--text);
+}
+
 @media (max-width: 720px) {
   .dials {
     grid-template-columns: 1fr;
