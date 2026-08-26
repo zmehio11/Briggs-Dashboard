@@ -17,7 +17,10 @@ async function fetchInstagramStats(): Promise<SocialPlatformStat | null> {
     `https://graph.facebook.com/${GRAPH_API_VERSION}/${igId}?fields=followers_count,media_count&access_token=${encodeURIComponent(token)}`,
     { next: { revalidate: 3600 } }
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error("[social/instagram] fetch failed", res.status, await res.text());
+    return null;
+  }
   const data = await res.json();
 
   return {
@@ -39,7 +42,10 @@ async function fetchFacebookStats(): Promise<SocialPlatformStat | null> {
     `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}?fields=fan_count&access_token=${encodeURIComponent(token)}`,
     { next: { revalidate: 3600 } }
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error("[social/facebook] fetch failed", res.status, await res.text());
+    return null;
+  }
   const data = await res.json();
 
   return {
