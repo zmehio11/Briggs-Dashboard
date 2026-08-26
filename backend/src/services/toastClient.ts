@@ -29,6 +29,9 @@ import { env } from "../lib/env.js";
  *   Draft Beer, Wine, NA Beverage, Gift Cards, etc.
  * - `check.openedBy.guid` is a RestaurantUser reference; `GET
  *   /labor/v1/employees` resolves it to a real name.
+ * - `order.numberOfGuests` is the cover count for that order -- summed once
+ *   per order (not per check), since a split check would otherwise
+ *   double-count the same table's guests.
  */
 
 interface ToastToken {
@@ -110,6 +113,7 @@ export interface DailySalesResult {
   netSales: number;
   discounts: number;
   orderCount: number;
+  covers: number;
 }
 
 export interface ItemSalesResult {
@@ -172,6 +176,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
   let discounts = 0;
   let refunds = 0;
   let orderCount = 0;
+  let covers = 0;
   const itemTotals = new Map<string, ItemSalesResult>();
   const flags: TransactionFlagResult[] = [];
 
@@ -228,7 +233,13 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
         }
       }
     }
-    if (orderHasClosedCheck) orderCount += 1;
+    if (orderHasClosedCheck) {
+      orderCount += 1;
+      // numberOfGuests is per-order (not per-check), so count it once per
+      // order here rather than inside the per-check loop above -- a split
+      // check would otherwise double-count the same table's guests.
+      covers += order.numberOfGuests ?? 0;
+    }
   }
 
   const netSales = grossSales - discounts - refunds;
@@ -240,6 +251,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
       netSales: round2(netSales),
       discounts: round2(discounts + refunds),
       orderCount,
+      covers,
     },
     items: Array.from(itemTotals.values()).map((i) => ({ ...i, revenue: round2(i.revenue) })),
     flags,

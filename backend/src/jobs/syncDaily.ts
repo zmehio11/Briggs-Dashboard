@@ -25,12 +25,14 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
         netSales: sales.netSales,
         discounts: sales.discounts,
         orderCount: sales.orderCount,
+        covers: sales.covers,
       },
       update: {
         grossSales: sales.grossSales,
         netSales: sales.netSales,
         discounts: sales.discounts,
         orderCount: sales.orderCount,
+        covers: sales.covers,
       },
     });
     for (const item of items) {

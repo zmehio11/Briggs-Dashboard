@@ -6,6 +6,7 @@ import { dashboardRouter } from "./routes/dashboard.js";
 import { itemsRouter } from "./routes/items.js";
 import { flagsRouter } from "./routes/flags.js";
 import { laborRouter } from "./routes/labor.js";
+import { dailySalesRouter } from "./routes/dailySales.js";
 import { syncYesterday } from "./jobs/syncDaily.js";
 
 const app = express();
@@ -17,6 +18,7 @@ app.use("/api/dashboard", dashboardRouter);
 app.use("/api/items", itemsRouter);
 app.use("/api/flags", flagsRouter);
 app.use("/api/labor", laborRouter);
+app.use("/api/daily-sales", dailySalesRouter);
 
 app.listen(env.port, () => {
   console.log(`Briggs dashboard API listening on :${env.port}`);
