@@ -34,12 +34,33 @@ async function fetchInstagramReach30d(igId: string, token: string): Promise<numb
   }
 }
 
-async function fetchFacebookReach30d(pageId: string, token: string): Promise<number | null> {
+async function derivePageAccessToken(pageId: string, systemUserToken: string): Promise<string | null> {
+  const res = await fetch(
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}?fields=access_token&access_token=${encodeURIComponent(systemUserToken)}`,
+    { next: { revalidate: 3600 } }
+  );
+  const body = await res.text();
+  if (!res.ok) {
+    console.error("[social/facebook/insights] derive page token failed", res.status, body);
+    return null;
+  }
+  try {
+    const data = JSON.parse(body);
+    return typeof data.access_token === "string" ? data.access_token : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFacebookReach30d(pageId: string, systemUserToken: string): Promise<number | null> {
   const until = new Date();
   const since = new Date();
   since.setUTCDate(since.getUTCDate() - 30);
 
-  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/insights?metric=page_total_media_view_unique&period=day&metric_type=total_value&since=${dateStr(since)}&until=${dateStr(until)}&access_token=${encodeURIComponent(token)}`;
+  const pageToken = await derivePageAccessToken(pageId, systemUserToken);
+  if (!pageToken) return null;
+
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/insights?metric=page_total_media_view_unique&period=day&metric_type=total_value&since=${dateStr(since)}&until=${dateStr(until)}&access_token=${encodeURIComponent(pageToken)}`;
   const res = await fetch(url, { next: { revalidate: 3600 } });
   const body = await res.text();
   if (!res.ok) {
