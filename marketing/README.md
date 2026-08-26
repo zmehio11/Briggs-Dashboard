@@ -14,11 +14,12 @@ count on that same page are still mock. Customer Segments, Promo Performance, an
 other 6 pages still render deterministic mock data — internally consistent (the Health
 Score is computed from the same numbers the detail pages show, not a
 separate random figure), but fake, until their adapters go live one at a
-time the same way. The **Marketing Engine** described in the original
-spec is starting: the Content Calendar generator is live (see "Marketing
-Engine (Phase 2)" below); the rest (review response drafts, campaign
-brief generator, community outreach tracker, VIP CRM, weekly
-auto-report) are still to come.
+time the same way. Four of six **Marketing Engine** pieces from the
+original spec are built — Content Calendar, Weekly Report, Campaign
+Brief generator, Community Outreach Tracker (see "Marketing Engine
+(Phase 2)" below); review response drafts and a VIP CRM are still
+blocked on external data (Google review API approval, Toast guest
+identity).
 
 ## Quick start
 
@@ -258,10 +259,25 @@ adapters above.
   specific automatically as more adapters go live — e.g. once GBP local
   visibility is real, the Google Business day's rationale would cite
   actual search-impression numbers instead of staying generic.
-- **Weekly auto-report**, **campaign brief generator**, **community
-  outreach tracker** — not built yet, but unblocked: they can compose
-  from today's adapters the same way the Content Calendar does, without
-  waiting on Google/OpenTable approval.
+- **Weekly Report** (`/weekly-report`, `src/lib/weeklyReport.ts`) —
+  **built.** Last-7-days-vs-the-7-before-that across revenue, reviews,
+  social, campaigns, local visibility, and attribution, plus an
+  auto-generated priorities list driven by the Health Score's weakest
+  component and any unanswered low-rated review.
+- **Campaign Brief generator** (`/campaign-brief`, `src/lib/campaignBrief.ts`)
+  — **built.** A plain-language goal ("Boost Tuesday covers") in, a
+  one-page brief out (audience/channels/offer/budget/timeline), with a
+  cited rationale for every field. Deliberately not an LLM call — a
+  deterministic Server Action that fills the template from the same
+  revenue/promo/review/social data the rest of the dashboard reads, so
+  it's reproducible and free to run.
+- **Community Outreach Tracker** (`/community-outreach`) — **built.**
+  A CRUD list of local partnership/sponsorship/press/influencer contacts.
+  Unlike every other adapter, this is the app's own data, not a vendor's —
+  backed by a new `OutreachContact` table on the ops backend's existing
+  Postgres (same reasoning as Revenue & Covers reusing `/api/daily-sales`
+  instead of a second database), read/written via Server Actions in
+  `src/app/community-outreach/actions.ts`.
 - **Review response drafts** — needs live review data first (still mock;
   Google's API access is pending approval, Yelp was skipped).
 - **VIP CRM** — needs Toast per-guest identity, which the ops backend
