@@ -134,6 +134,25 @@ model TransactionFlag {
   @@index([businessDate])
 }
 
+/// A local partnership/sponsorship/press/influencer contact for the
+/// Marketing Engine's Community Outreach Tracker. Owner-managed CRUD, not
+/// synced from any vendor.
+model OutreachContact {
+  id              String    @id @default(cuid())
+  name            String
+  organization    String?
+  type            String // "Partnership" | "Sponsorship" | "Influencer" | "Local Press" | "Community Event" | "Other"
+  status          String    @default("Not Contacted") // "Not Contacted" | "Contacted" | "In Discussion" | "Active" | "Declined"
+  contactInfo     String?
+  notes           String?
+  lastContactDate DateTime? @db.Date
+  nextActionDate  DateTime? @db.Date
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+}
+
 /// Audit trail for the nightly sync job.
 model SyncLog {
   id         String   @id @default(cuid())
