@@ -11,6 +11,7 @@ import { scheduleRouter } from "./routes/schedule.js";
 import { dailySalesRouter } from "./routes/dailySales.js";
 import { outreachRouter } from "./routes/outreach.js";
 import { quickbooksRouter } from "./routes/quickbooks.js";
+import { marginEdgeRouter } from "./routes/marginEdge.js";
 import { expensesRouter } from "./routes/expenses.js";
 import { syncYesterday } from "./jobs/syncDaily.js";
 import { syncQuickbooksExpenses } from "./jobs/syncQuickbooks.js";
@@ -29,6 +30,7 @@ app.use("/api/schedule", scheduleRouter);
 app.use("/api/daily-sales", dailySalesRouter);
 app.use("/api/outreach", outreachRouter);
 app.use("/api/quickbooks", quickbooksRouter);
+app.use("/api/margin-edge", marginEdgeRouter);
 app.use("/api/expenses", expensesRouter);
 
 app.listen(env.port, () => {
