@@ -24,6 +24,7 @@ quickbooksRouter.get("/callback", async (req, res) => {
   const { code, realmId } = req.query as { code?: string; realmId?: string };
 
   if (!code || !realmId) {
+    console.error("[quickbooks] callback missing code/realmId -- full query:", req.query);
     res.status(400).send("QuickBooks connect failed: missing code or realmId in callback.");
     return;
   }
