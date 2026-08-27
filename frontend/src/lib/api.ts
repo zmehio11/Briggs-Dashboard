@@ -17,6 +17,8 @@ export interface Bucket {
   budgetLaborPct: number | null;
   budgetCogsPct: number | null;
   budgetPrimeCostPct: number | null;
+  opex: number | null;
+  opexPct: number | null;
 }
 
 export async function fetchDashboard(period: Period): Promise<Bucket[]> {
@@ -24,6 +26,19 @@ export async function fetchDashboard(period: Period): Promise<Bucket[]> {
   if (!res.ok) throw new Error(`Dashboard fetch failed: ${res.status}`);
   const data = await res.json();
   return data.buckets;
+}
+
+export interface MonthlyExpenseRow {
+  year: number;
+  month: number;
+  category: string;
+  amount: number;
+}
+
+export async function fetchExpenses(): Promise<MonthlyExpenseRow[]> {
+  const res = await fetch(`/api/expenses`);
+  if (!res.ok) throw new Error(`Expenses fetch failed: ${res.status}`);
+  return res.json();
 }
 
 export interface DayOfWeekStat {

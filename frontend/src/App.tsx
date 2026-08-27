@@ -14,6 +14,7 @@ import { PrimeCostDial } from "./components/PrimeCostDial";
 import { ItemsPage } from "./components/ItemsPage";
 import { FlagsPage } from "./components/FlagsPage";
 import { LaborPage } from "./components/LaborPage";
+import { ExpensesPage } from "./components/ExpensesPage";
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "weekly", label: "Weekly" },
@@ -25,13 +26,14 @@ const PAGES: { key: Page; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "items", label: "Items by Day" },
   { key: "labor", label: "Labour" },
+  { key: "expenses", label: "Expenses" },
   { key: "flags", label: "Sales Analysis" },
 ];
 
-type Page = "dashboard" | "items" | "labor" | "flags";
+type Page = "dashboard" | "items" | "labor" | "expenses" | "flags";
 
 // Common industry targets; adjust once Briggs' own budget is set.
-const TARGETS = { labor: 30, cogs: 30, prime: 60 };
+const TARGETS = { labor: 30, cogs: 30, prime: 60, opex: 20 };
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -80,6 +82,7 @@ export default function App() {
 
       {page === "items" && <ItemsPage />}
       {page === "labor" && <LaborPage />}
+      {page === "expenses" && <ExpensesPage />}
       {page === "flags" && <FlagsPage />}
 
       {page === "dashboard" && (
@@ -122,6 +125,7 @@ export default function App() {
             target={latest.budgetPrimeCostPct ?? TARGETS.prime}
             targetSource={latest.budgetPrimeCostPct != null ? "budget" : "estimate"}
           />
+          <PrimeCostDial label="Operating Expenses %" value={latest.opexPct} target={TARGETS.opex} targetSource="estimate" />
         </section>
       )}
 
@@ -141,6 +145,7 @@ export default function App() {
               <Line type="monotone" dataKey="laborPct" name="Labor %" stroke="#C9A15A" strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="cogsPct" name="COGS %" stroke="#8FA37A" strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="primeCostPct" name="Prime Cost %" stroke="#C4664A" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="opexPct" name="Opex %" stroke="#7A8FA3" strokeWidth={2} dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         </section>
@@ -164,6 +169,7 @@ export default function App() {
                   <th>Budget COGS %</th>
                   <th>Prime Cost %</th>
                   <th>Budget Prime %</th>
+                  <th>Opex %</th>
                   <th>Orders</th>
                 </tr>
               </thead>
@@ -181,6 +187,7 @@ export default function App() {
                     <td>{b.budgetCogsPct == null ? "—" : `${b.budgetCogsPct.toFixed(1)}%`}</td>
                     <td>{b.primeCostPct == null ? "—" : `${b.primeCostPct.toFixed(1)}%`}</td>
                     <td>{b.budgetPrimeCostPct == null ? "—" : `${b.budgetPrimeCostPct.toFixed(1)}%`}</td>
+                    <td>{b.opexPct == null ? "—" : `${b.opexPct.toFixed(1)}%`}</td>
                     <td>{b.orderCount}</td>
                   </tr>
                 ))}

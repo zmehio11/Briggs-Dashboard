@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CategoryGroup, fetchItems, ItemStat, Quadrant } from "../lib/api";
+import { SortableTh, sortByKey, useSort } from "../lib/sortableTable";
 
 const WEEKDAY_ABBR: Record<string, string> = {
   Monday: "Mon",
@@ -30,55 +31,6 @@ const QUADRANT_HINT: Record<Quadrant, string> = {
   Puzzle: "earns well, doesn't sell — feature it more",
   Dog: "neither sells nor earns — candidate to cut",
 };
-
-type SortDir = "asc" | "desc";
-interface SortState {
-  key: string;
-  dir: SortDir;
-}
-
-/** Sorts nulls last regardless of direction -- a missing value isn't "low". */
-function sortByKey<T>(list: T[], sort: SortState, getValue: (item: T, key: string) => string | number | null): T[] {
-  return [...list].sort((a, b) => {
-    const av = getValue(a, sort.key);
-    const bv = getValue(b, sort.key);
-    if (av == null && bv == null) return 0;
-    if (av == null) return 1;
-    if (bv == null) return -1;
-    const cmp = typeof av === "string" && typeof bv === "string" ? av.localeCompare(bv) : (av as number) - (bv as number);
-    return sort.dir === "asc" ? cmp : -cmp;
-  });
-}
-
-function SortableTh({
-  label,
-  sortKey,
-  defaultDir,
-  sort,
-  onSort,
-}: {
-  label: string;
-  sortKey: string;
-  defaultDir: SortDir;
-  sort: SortState;
-  onSort: (key: string, defaultDir: SortDir) => void;
-}) {
-  const active = sort.key === sortKey;
-  return (
-    <th className={`sortable${active ? " active" : ""}`} onClick={() => onSort(sortKey, defaultDir)}>
-      {label}
-      {active ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
-    </th>
-  );
-}
-
-function useSort(initial: SortState) {
-  const [sort, setSort] = useState<SortState>(initial);
-  const onSort = (key: string, defaultDir: SortDir) => {
-    setSort((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: defaultDir }));
-  };
-  return { sort, onSort };
-}
 
 function menuEngineeringValue(item: ItemStat, key: string): string | number | null {
   switch (key) {
