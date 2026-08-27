@@ -1,8 +1,9 @@
 # Briggs Restaurant — Sales / Labor / COGS Dashboard
 
 A hosted dashboard that syncs data nightly from **Toast POS** (sales), **Push Operations**
-(labor), and **MarginEdge** (cost of sales), stores it in Postgres, and shows
-labor-vs-sales and COGS-vs-sales trends by **week / month / year**.
+(labor), **MarginEdge** (cost of sales), and **QuickBooks Online** (operating
+expenses), stores it in Postgres, and shows labor/COGS/opex-vs-sales trends
+by **week / month / year**.
 
 ## Why it's built this way
 
@@ -70,11 +71,35 @@ real data, and actually deploying it), **Claude Code** is a better fit than
 this chat — it can run the dev servers, hit your real APIs, and push to your
 hosting provider directly.
 
+## QuickBooks Online (operating expenses)
+
+Unlike Toast/Push/MarginEdge, QuickBooks uses OAuth2 (log in and authorize)
+rather than a static API key, since it's scoped to whichever real company
+the owner connects — there's no vendor-issued credential to just paste in.
+
+- Create a Production app at [developer.intuit.com](https://developer.intuit.com)
+  (Development/sandbox keys only talk to Intuit's fake test company, not real
+  books). Set `QUICKBOOKS_CLIENT_ID` / `QUICKBOOKS_CLIENT_SECRET` from its
+  Production keys.
+- Register `{backend URL}/api/quickbooks/callback` under that app's
+  **Production** Redirect URIs (Keys & OAuth → Production tab) — must match
+  exactly, and Development/Production keep separate redirect-URI lists.
+- Visit `GET /api/quickbooks/connect` in a browser, log into the real QBO
+  company, and authorize. The connection (refresh token + company/realm ID)
+  is stored in Postgres (`QuickbooksConnection`), not an env var, since the
+  refresh token rotates on every use.
+- `GET /api/quickbooks/sync-now` triggers an immediate sync (useful right
+  after connecting) instead of waiting for the nightly cron.
+- Pulls the Profit & Loss report's **Expenses** section only — COGS stays
+  MarginEdge's job — summarized by month into `MonthlyExpense`.
+
 ## Data model
 
 - `DailySales` — one row per business date: gross sales, net sales, order count
 - `DailyLabor` — one row per business date: regular/OT hours, total labor cost, headcount
 - `DailyCogs` — one row per business date + category: COGS amount (food, beverage, etc.)
+- `MonthlyExpense` — one row per calendar month + QuickBooks account category: operating expense amount
+- `QuickbooksConnection` — the OAuth connection (realm ID, access/refresh tokens)
 - `SyncLog` — audit trail of each nightly sync run (source, status, rows written)
 
 Weekly/monthly/yearly aggregation happens in the API layer (`backend/src/routes/dashboard.ts`),
