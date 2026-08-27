@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { fetchLabor, LaborDayStat, LaborPositionStat } from "../lib/api";
+import { WeeklySchedule } from "./WeeklySchedule";
 
 const WEEKDAY_ABBR: Record<string, string> = {
   Monday: "Mon",
@@ -62,6 +63,8 @@ export function LaborPage() {
           populate.
         </div>
       )}
+
+      {hasData && <WeeklySchedule />}
 
       {hasData && (
         <section className="chart-card">

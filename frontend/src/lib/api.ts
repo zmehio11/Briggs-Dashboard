@@ -145,3 +145,35 @@ export async function fetchLabor(): Promise<LaborResponse> {
   if (!res.ok) throw new Error(`Labor fetch failed: ${res.status}`);
   return res.json();
 }
+
+export interface SchedulePositionStat {
+  positionName: string;
+  group: LaborGroup;
+  avgHeadcount: number;
+  avgHours: number;
+  avgCost: number;
+}
+
+export interface ScheduleDayStat {
+  day: string;
+  occurrencesUsed: number;
+  predictedSales: number;
+  targetLaborPct: number;
+  targetLaborCost: number;
+  projectedLaborCost: number;
+  projectedLaborPct: number | null;
+  overBudget: boolean;
+  positions: SchedulePositionStat[];
+}
+
+export interface ScheduleResponse {
+  weeksRequested: number;
+  targetSource: "budget" | "estimate";
+  days: ScheduleDayStat[];
+}
+
+export async function fetchSchedule(weeks = 8): Promise<ScheduleResponse> {
+  const res = await fetch(`/api/schedule?weeks=${weeks}`);
+  if (!res.ok) throw new Error(`Schedule fetch failed: ${res.status}`);
+  return res.json();
+}
