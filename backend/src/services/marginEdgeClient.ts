@@ -17,9 +17,14 @@ import { env } from "../lib/env.js";
  *   request volume just to feed a single COGS-% metric.
  * - GET /recipes returns every recipe's current theoretical cost
  *   (`recipeCost`, cost per `unit` to make one). `recipeCategoryType` is
- *   MENU (a sellable food item), BAR (a sellable drink), or PREPARED (a
- *   sub-component used inside other recipes, never sold directly — skip
- *   these). Paginated via a `nextPage` cursor like the orders endpoint.
+ *   MENU, BAR, or PREPARED — originally assumed PREPARED meant "internal
+ *   sub-component, never sold directly" and skipped it, but Briggs' own
+ *   MarginEdge setup has most of the real food menu entered under
+ *   PREPARED, not MENU, so that assumption was wrong and excluded most of
+ *   the food cost data entirely. All three category types are pulled now;
+ *   `isInactive` (an archived/deleted recipe, not a category) is the only
+ *   real skip criterion. Paginated via a `nextPage` cursor like the
+ *   orders endpoint.
  */
 
 export interface DailyCogsResult {
@@ -55,7 +60,7 @@ export interface RecipeCostResult {
   isInactive: boolean;
 }
 
-/** Every sellable recipe's current cost — MENU + BAR only, PREPARED sub-components excluded. */
+/** Every active recipe's current cost, across all category types. */
 export async function fetchRecipeCosts(): Promise<RecipeCostResult[]> {
   const results: RecipeCostResult[] = [];
   let nextPage: string | undefined;
@@ -66,7 +71,7 @@ export async function fetchRecipeCosts(): Promise<RecipeCostResult[]> {
       params: { restaurantUnitId: env.marginEdge.restaurantId, ...(nextPage ? { nextPage } : {}) },
     });
     for (const r of data?.recipes ?? []) {
-      if (r.recipeCategoryType === "PREPARED") continue;
+      if (r.isInactive) continue;
       results.push({
         recipeId: String(r.recipeId),
         recipeName: r.recipeName,
