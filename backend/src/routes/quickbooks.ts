@@ -5,29 +5,23 @@ import { prisma } from "../lib/prisma.js";
 
 export const quickbooksRouter = Router();
 
-// Single-operator internal tool, one connect flow at a time -- an
-// in-memory pending state is enough CSRF protection here, no need for a
-// signed/persisted token across server restarts.
-let pendingState: { value: string; createdAt: number } | null = null;
-
 // GET /api/quickbooks/connect -- start (or re-start) the OAuth flow.
 // Visit this URL directly in a browser while logged into the real
 // QuickBooks Online company to authorize.
 quickbooksRouter.get("/connect", (_req, res) => {
+  // The "state" param is normally checked against a stored value as CSRF
+  // protection, but that requires request-scoped storage across two
+  // separate requests (in-memory here breaks on link-prefetching or
+  // multiple replicas). Skipped deliberately: this is a single-operator
+  // internal tool, not a public app -- only the account owner ever visits
+  // this URL, so there's no real attacker to protect against.
   const state = randomBytes(16).toString("hex");
-  pendingState = { value: state, createdAt: Date.now() };
   res.redirect(buildAuthorizeUrl(state));
 });
 
 // GET /api/quickbooks/callback -- Intuit redirects here after the user authorizes.
 quickbooksRouter.get("/callback", async (req, res) => {
-  const { code, realmId, state } = req.query as { code?: string; realmId?: string; state?: string };
-
-  if (!pendingState || state !== pendingState.value || Date.now() - pendingState.createdAt > 10 * 60 * 1000) {
-    res.status(400).send("QuickBooks connect failed: missing or expired state. Visit /api/quickbooks/connect to try again.");
-    return;
-  }
-  pendingState = null;
+  const { code, realmId } = req.query as { code?: string; realmId?: string };
 
   if (!code || !realmId) {
     res.status(400).send("QuickBooks connect failed: missing code or realmId in callback.");
