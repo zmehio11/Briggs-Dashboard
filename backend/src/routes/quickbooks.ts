@@ -1,6 +1,8 @@
 import { randomBytes } from "crypto";
 import { Router } from "express";
 import { buildAuthorizeUrl, exchangeCodeForTokens, disconnect } from "../services/quickbooksClient.js";
+import { syncQuickbooksExpenses } from "../jobs/syncQuickbooks.js";
+import { env } from "../lib/env.js";
 import { prisma } from "../lib/prisma.js";
 
 export const quickbooksRouter = Router();
@@ -51,4 +53,14 @@ quickbooksRouter.get("/status", async (_req, res) => {
     connected: !!connection,
     connectedAt: connection?.connectedAt ?? null,
   });
+});
+
+// GET /api/quickbooks/sync-now -- on-demand sync, runs in the deployed
+// process itself (which already has private-network DB access) rather
+// than needing a local tunnel. Not on the nightly cron's schedule --
+// useful right after first connecting, or to re-pull without waiting.
+quickbooksRouter.get("/sync-now", async (_req, res) => {
+  const backfill = env.backfillStartDate ? new Date(env.backfillStartDate) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  await syncQuickbooksExpenses(backfill.getUTCFullYear(), backfill.getUTCMonth() + 1);
+  res.send("QuickBooks sync ran -- check /api/expenses or SyncLog for results.");
 });
