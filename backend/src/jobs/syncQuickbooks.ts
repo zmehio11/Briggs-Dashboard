@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { env } from "../lib/env.js";
 import { prisma } from "../lib/prisma.js";
 import { fetchMonthlyExpensesByCategory } from "../services/quickbooksClient.js";
 
@@ -35,4 +36,23 @@ export async function syncQuickbooksExpenses(sinceYear: number, sinceMonth: numb
       data: { source: "quickbooks", startedAt, finishedAt: new Date(), status: "failed", rowsWritten: 0, errorMessage: message.slice(0, 500) },
     });
   }
+}
+
+// Allows `npm run quickbooks:sync-now` for an on-demand run (e.g. right
+// after first connecting, instead of waiting for the nightly cron):
+//   tsx src/jobs/syncQuickbooks.ts [YYYY-MM]
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const arg = process.argv[2];
+  let sinceYear: number;
+  let sinceMonth: number;
+  if (arg) {
+    [sinceYear, sinceMonth] = arg.split("-").map(Number);
+  } else {
+    const backfill = env.backfillStartDate ? new Date(env.backfillStartDate) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    sinceYear = backfill.getUTCFullYear();
+    sinceMonth = backfill.getUTCMonth() + 1;
+  }
+  console.log(`Syncing QuickBooks expenses since ${sinceYear}-${String(sinceMonth).padStart(2, "0")}...`);
+  await syncQuickbooksExpenses(sinceYear, sinceMonth);
+  await prisma.$disconnect();
 }
