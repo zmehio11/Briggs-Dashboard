@@ -64,8 +64,6 @@ export function LaborPage() {
         </div>
       )}
 
-      {hasData && <WeeklySchedule />}
-
       {hasData && (
         <section className="chart-card">
           <h2>Avg Labor Cost by Day — FOH vs BOH</h2>
@@ -177,6 +175,8 @@ export function LaborPage() {
           </div>
         </section>
       )}
+
+      {hasData && <WeeklySchedule />}
     </div>
   );
 }
