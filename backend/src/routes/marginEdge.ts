@@ -15,11 +15,19 @@ export const marginEdgeRouter = Router();
 marginEdgeRouter.get("/debug", async (_req, res) => {
   const headers = { "X-Api-Key": env.marginEdge.apiKey };
   const params = { restaurantUnitId: env.marginEdge.restaurantId };
-  const [types, ingredients] = await Promise.all([
-    axios.get(`${env.marginEdge.baseUrl}/recipeTypes`, { params }).then((r) => r.data),
-    axios.get(`${env.marginEdge.baseUrl}/recipeIngredients`, { params }).then((r) => r.data),
-  ]);
-  res.json({ types, ingredients });
+  const result: any = {};
+  for (const [key, path] of [
+    ["types", "/recipeTypes"],
+    ["ingredients", "/recipeIngredients"],
+  ] as const) {
+    try {
+      const { data } = await axios.get(`${env.marginEdge.baseUrl}${path}`, { headers, params });
+      result[key] = data;
+    } catch (err: any) {
+      result[key] = { error: true, status: err?.response?.status, data: err?.response?.data ?? String(err?.message ?? err) };
+    }
+  }
+  res.json(result);
 });
 
 // GET /api/margin-edge/sync-now -- re-pulls MarginEdge's recipe list
