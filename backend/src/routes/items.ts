@@ -17,20 +17,26 @@ const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
  * days a given item happened to sell, so a slow Tuesday for one item still
  * pulls its average down rather than being silently excluded.
  *
- * Also joins in MarginEdge's recipe cost (matched by normalized name,
- * since Toast and MarginEdge share no common item ID) to compute margin,
- * and classifies matched items into the classic menu-engineering
- * quadrant — Star / Plowhorse / Puzzle / Dog — by splitting on the median
- * quantity and median margin % across items that have a cost match.
+ * Also joins in MarginEdge's recipe cost to compute margin, and
+ * classifies matched items into the classic menu-engineering quadrant --
+ * Star / Plowhorse / Puzzle / Dog -- by splitting on the median quantity
+ * and median margin % across items that have a cost match. A manual
+ * mapping (ItemCostMapping, see /api/item-mappings) always wins when one
+ * exists; automatic normalized-name matching is the fallback for
+ * everything else, since Toast and MarginEdge share no common item ID and
+ * naming conventions between the two systems often don't line up.
  */
 itemsRouter.get("/", async (_req, res) => {
-  const [syncedDays, itemRows, recipeCosts] = await Promise.all([
+  const [syncedDays, itemRows, recipeCosts, mappings] = await Promise.all([
     prisma.dailySales.findMany({ select: { businessDate: true } }),
     prisma.dailyItemSales.findMany(),
     prisma.recipeCost.findMany(),
+    prisma.itemCostMapping.findMany(),
   ]);
 
   const costByName = new Map(recipeCosts.map((r) => [r.normalizedName, r]));
+  const costById = new Map(recipeCosts.map((r) => [r.recipeId, r]));
+  const mappingByItemGuid = new Map(mappings.map((m) => [m.itemGuid, m.recipeId]));
 
   const daysObservedByWeekday = new Map<string, number>();
   for (const day of WEEKDAYS) daysObservedByWeekday.set(day, 0);
@@ -72,7 +78,8 @@ itemsRouter.get("/", async (_req, res) => {
   }
 
   const withCost = Array.from(items.values()).map((agg) => {
-    const cost = costByName.get(normalizeItemName(agg.itemName));
+    const mappedRecipeId = mappingByItemGuid.get(agg.itemGuid);
+    const cost = (mappedRecipeId ? costById.get(mappedRecipeId) : undefined) ?? costByName.get(normalizeItemName(agg.itemName));
     const unitCost = cost ? Number(cost.unitCost) : null;
     const totalCost = unitCost != null ? round2(unitCost * agg.totalQuantity) : null;
     const margin = totalCost != null ? round2(agg.totalRevenue - totalCost) : null;

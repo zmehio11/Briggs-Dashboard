@@ -177,3 +177,49 @@ export async function fetchSchedule(weeks = 8): Promise<ScheduleResponse> {
   if (!res.ok) throw new Error(`Schedule fetch failed: ${res.status}`);
   return res.json();
 }
+
+export interface UnmatchedItem {
+  itemGuid: string;
+  itemName: string;
+  categoryName: string | null;
+  totalQuantity: number;
+  totalRevenue: number;
+}
+
+export interface MappedItem extends UnmatchedItem {
+  recipeId: string;
+  recipeName: string;
+}
+
+export interface RecipeOption {
+  recipeId: string;
+  recipeName: string;
+  categoryType: string;
+  unitCost: number;
+}
+
+export interface ItemMappingsResponse {
+  unmatched: UnmatchedItem[];
+  mapped: MappedItem[];
+  recipes: RecipeOption[];
+}
+
+export async function fetchItemMappings(): Promise<ItemMappingsResponse> {
+  const res = await fetch(`/api/item-mappings`);
+  if (!res.ok) throw new Error(`Item mappings fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function saveItemMapping(itemGuid: string, recipeId: string): Promise<void> {
+  const res = await fetch(`/api/item-mappings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itemGuid, recipeId }),
+  });
+  if (!res.ok) throw new Error(`Save mapping failed: ${res.status}`);
+}
+
+export async function deleteItemMapping(itemGuid: string): Promise<void> {
+  const res = await fetch(`/api/item-mappings/${itemGuid}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new Error(`Delete mapping failed: ${res.status}`);
+}

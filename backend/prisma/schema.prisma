@@ -153,6 +153,19 @@ model OutreachContact {
   @@index([status])
 }
 
+/// Manual override linking one Toast menu item to its real MarginEdge
+/// recipe, for the ~85% of items automatic normalized-name matching
+/// misses (different naming conventions between the two systems --
+/// "Steak Frites 5oz" in Toast vs. whatever MarginEdge calls it). Always
+/// takes priority over the automatic match in items.ts.
+model ItemCostMapping {
+  id        String   @id @default(cuid())
+  itemGuid  String   @unique
+  recipeId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// Audit trail for the nightly sync job.
 model SyncLog {
   id         String   @id @default(cuid())

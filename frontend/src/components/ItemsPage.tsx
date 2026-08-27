@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CategoryGroup, fetchItems, ItemStat, Quadrant } from "../lib/api";
 import { SortableTh, sortByKey, useSort } from "../lib/sortableTable";
+import { ItemMappingPanel } from "./ItemMappingPanel";
 
 const WEEKDAY_ABBR: Record<string, string> = {
   Monday: "Mon",
@@ -206,6 +207,8 @@ export function ItemsPage() {
           </div>
         </section>
       )}
+
+      {items.length > 0 && <ItemMappingPanel />}
     </div>
   );
 }
