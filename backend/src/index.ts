@@ -8,7 +8,10 @@ import { flagsRouter } from "./routes/flags.js";
 import { laborRouter } from "./routes/labor.js";
 import { dailySalesRouter } from "./routes/dailySales.js";
 import { outreachRouter } from "./routes/outreach.js";
+import { quickbooksRouter } from "./routes/quickbooks.js";
+import { expensesRouter } from "./routes/expenses.js";
 import { syncYesterday } from "./jobs/syncDaily.js";
+import { syncQuickbooksExpenses } from "./jobs/syncQuickbooks.js";
 
 const app = express();
 app.use(cors({ origin: env.frontendOrigin }));
@@ -21,6 +24,8 @@ app.use("/api/flags", flagsRouter);
 app.use("/api/labor", laborRouter);
 app.use("/api/daily-sales", dailySalesRouter);
 app.use("/api/outreach", outreachRouter);
+app.use("/api/quickbooks", quickbooksRouter);
+app.use("/api/expenses", expensesRouter);
 
 app.listen(env.port, () => {
   console.log(`Briggs dashboard API listening on :${env.port}`);
@@ -38,6 +43,11 @@ cron.schedule(
   () => {
     console.log("Running nightly sync...");
     syncYesterday().catch((err) => console.error("Nightly sync failed:", err));
+
+    const backfill = env.backfillStartDate ? new Date(env.backfillStartDate) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    syncQuickbooksExpenses(backfill.getUTCFullYear(), backfill.getUTCMonth() + 1).catch((err) =>
+      console.error("Nightly QuickBooks sync failed:", err)
+    );
   },
   { timezone: "America/Denver" }
 );

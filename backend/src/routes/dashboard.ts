@@ -78,6 +78,28 @@ function budgetForRange(
 }
 
 /**
+ * Prorates each calendar month's total operating expenses (summed across
+ * QuickBooks categories) across the days it overlaps [start, end] -- same
+ * proration approach as budgetForRange, applied to actuals instead of a
+ * budget line since QuickBooks only reports at monthly granularity.
+ */
+function opexForRange(monthlyTotals: Map<string, number>, start: Date, end: Date): number | null {
+  let opex = 0;
+  let matched = false;
+
+  for (const [key, total] of monthlyTotals) {
+    const [year, month] = key.split("-").map(Number);
+    const overlapDays = monthOverlapDays(year, month, start, end);
+    if (overlapDays <= 0) continue;
+    matched = true;
+    const daysInMonth = getDaysInMonth(new Date(year, month - 1, 1));
+    opex += total * (overlapDays / daysInMonth);
+  }
+
+  return matched ? opex : null;
+}
+
+/**
  * GET /api/dashboard?period=weekly|monthly|yearly&start=YYYY-MM-DD&end=YYYY-MM-DD
  *
  * Returns period buckets with sales, labor cost, COGS, the derived ratios
@@ -89,12 +111,19 @@ dashboardRouter.get("/", async (req, res) => {
   const start = req.query.start ? new Date(String(req.query.start)) : new Date("2000-01-01");
   const end = req.query.end ? new Date(String(req.query.end)) : new Date();
 
-  const [sales, labor, cogs, budgets] = await Promise.all([
+  const [sales, labor, cogs, budgets, expenses] = await Promise.all([
     prisma.dailySales.findMany({ where: { businessDate: { gte: start, lte: end } } }),
     prisma.dailyLabor.findMany({ where: { businessDate: { gte: start, lte: end } } }),
     prisma.dailyCogs.findMany({ where: { businessDate: { gte: start, lte: end } } }),
     prisma.budgetMonth.findMany(),
+    prisma.monthlyExpense.findMany(),
   ]);
+
+  const monthlyOpexTotals = new Map<string, number>();
+  for (const row of expenses) {
+    const key = `${row.year}-${row.month}`;
+    monthlyOpexTotals.set(key, (monthlyOpexTotals.get(key) ?? 0) + Number(row.amount));
+  }
 
   type Bucket = {
     key: string;
@@ -146,6 +175,7 @@ dashboardRouter.get("/", async (req, res) => {
     .sort((a, b) => a.key.localeCompare(b.key))
     .map((b) => {
       const budget = budgetForRange(budgets, b.start, b.end);
+      const opex = opexForRange(monthlyOpexTotals, b.start, b.end);
       return {
         key: b.key,
         label: b.label,
@@ -157,6 +187,12 @@ dashboardRouter.get("/", async (req, res) => {
         laborPct: b.netSales > 0 ? round2((b.laborCost / b.netSales) * 100) : null,
         cogsPct: b.netSales > 0 ? round2((b.cogs / b.netSales) * 100) : null,
         primeCostPct: b.netSales > 0 ? round2(((b.laborCost + b.cogs) / b.netSales) * 100) : null,
+        // Operating expenses from QuickBooks (rent, utilities, insurance,
+        // etc.) -- separate from Prime Cost, which stays labor+COGS only
+        // by definition. null until a month's worth of QuickBooks data
+        // has synced.
+        opex: opex != null ? round2(opex) : null,
+        opexPct: opex != null && b.netSales > 0 ? round2((opex / b.netSales) * 100) : null,
         budgetRevenue: budget ? round2(budget.revenue) : null,
         budgetCogs: budget ? round2(budget.cogs) : null,
         budgetLabor: budget ? round2(budget.labor) : null,

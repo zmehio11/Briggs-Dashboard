@@ -163,3 +163,34 @@ model SyncLog {
   rowsWritten Int     @default(0)
   errorMessage String?
 }
+
+/// Single-row OAuth connection to one QuickBooks Online company (Briggs'
+/// real company, not the Intuit sandbox). refreshToken rotates on every
+/// use and is valid ~100 days -- always overwritten with the latest one
+/// returned, never reused after a refresh. accessToken is cached with its
+/// expiry so most requests skip the refresh round-trip (valid ~1 hour).
+model QuickbooksConnection {
+  id                String   @id @default(cuid())
+  realmId           String   @unique
+  accessToken       String
+  accessTokenExpiresAt DateTime
+  refreshToken      String
+  connectedAt       DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+/// One row per calendar month + expense account, sourced from QuickBooks'
+/// Profit and Loss report (Expenses section only -- COGS is MarginEdge's
+/// job, not QuickBooks'). category is the QBO account name verbatim (e.g.
+/// "Rent Expense", "Utilities", "Insurance").
+model MonthlyExpense {
+  id        String   @id @default(cuid())
+  year      Int
+  month     Int // 1-12, calendar month
+  category  String
+  amount    Decimal  @db.Decimal(12, 2)
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month, category])
+  @@index([year, month])
+}

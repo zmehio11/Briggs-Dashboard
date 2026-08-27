@@ -34,4 +34,16 @@ export const env = {
     restaurantId: process.env.MARGIN_EDGE_RESTAURANT_ID ?? "",
     baseUrl: process.env.MARGIN_EDGE_API_BASE_URL ?? "https://api.marginedge.com/public",
   },
+  quickbooks: {
+    clientId: process.env.QUICKBOOKS_CLIENT_ID ?? "",
+    clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET ?? "",
+    // Must exactly match a Redirect URI registered on the Intuit app.
+    redirectUri: process.env.QUICKBOOKS_REDIRECT_URI ?? "https://briggs-dashboard-production.up.railway.app/api/quickbooks/callback",
+    // Production company data -- sandbox-quickbooks.api.intuit.com is the
+    // fake-data alternative, not used here since we want real books.
+    apiBaseUrl: process.env.QUICKBOOKS_API_BASE_URL ?? "https://quickbooks.api.intuit.com",
+    oauthBaseUrl: "https://oauth.platform.intuit.com/oauth2/v1",
+    authorizeUrl: "https://appcenter.intuit.com/connect/oauth2",
+    revokeUrl: "https://developer.api.intuit.com/v2/oauth2/tokens/revoke",
+  },
 };
