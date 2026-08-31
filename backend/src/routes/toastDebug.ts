@@ -55,3 +55,18 @@ toastDebugRouter.get("/employees", async (_req, res) => {
   const list: any[] = Array.isArray(data) ? data : [];
   res.json({ employeeCount: list.length, sample: list.slice(0, 8) });
 });
+
+// GET /api/toast-debug/jobs -- resolves job GUIDs (seen on employees'
+// jobReferences) to real job names, e.g. "Server" vs "Bartender".
+toastDebugRouter.get("/jobs", async (_req, res) => {
+  const { data: authData } = await axios.post(`${env.toast.baseUrl}/authentication/v1/authentication/login`, {
+    clientId: env.toast.clientId,
+    clientSecret: env.toast.clientSecret,
+    userAccessType: "TOAST_MACHINE_CLIENT",
+  });
+  const token = authData?.token?.accessToken;
+  const headers = { Authorization: `Bearer ${token}`, "Toast-Restaurant-External-ID": env.toast.restaurantGuid };
+
+  const { data } = await axios.get(`${env.toast.baseUrl}/labor/v1/jobs`, { headers });
+  res.json(data);
+});
