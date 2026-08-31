@@ -42,6 +42,7 @@ interface ToastToken {
 let cachedToken: ToastToken | null = null;
 let cachedItemCategories: Map<string, string | null> | null = null;
 let cachedEmployeeNames: Map<string, string> | null = null;
+let cachedEmployeeJobTitles: Map<string, string> | null = null;
 
 async function getToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) {
@@ -107,6 +108,29 @@ async function getEmployeeNames(token: string): Promise<Map<string, string>> {
   return cachedEmployeeNames;
 }
 
+/**
+ * Employee GUID -> Toast job title (e.g. "Server", "Bartender"), used to
+ * split the tips-payout FOH-vs-Bar server pools -- a POS-role distinction
+ * Push's payroll position data doesn't capture. Verified against
+ * GET /api/toast-debug/employees + /jobs: each employee has a
+ * jobReferences[] array of RestaurantJob guids resolved via
+ * GET /labor/v1/jobs; every sampled employee had exactly one, so the
+ * first is used -- someone holding two job titles in Toast would need
+ * this revisited, but no such case was seen.
+ */
+async function getEmployeeJobTitles(token: string): Promise<Map<string, string>> {
+  if (cachedEmployeeJobTitles) return cachedEmployeeJobTitles;
+  const [{ data: employees }, { data: jobs }] = await Promise.all([
+    axios.get(`${env.toast.baseUrl}/labor/v1/employees`, { headers: authHeaders(token) }),
+    axios.get(`${env.toast.baseUrl}/labor/v1/jobs`, { headers: authHeaders(token) }),
+  ]);
+  const jobTitleByGuid = new Map((jobs as any[]).map((j) => [j.guid, j.title as string]));
+  cachedEmployeeJobTitles = new Map(
+    (employees as any[]).map((e) => [e.guid, jobTitleByGuid.get(e.jobReferences?.[0]?.guid) ?? "Unknown"])
+  );
+  return cachedEmployeeJobTitles;
+}
+
 export interface DailySalesResult {
   businessDate: string; // YYYY-MM-DD
   grossSales: number;
@@ -154,6 +178,7 @@ export interface DailyCashoutResult {
 export interface ServerActivityResult {
   employeeGuid: string;
   employeeName: string;
+  jobTitle: string; // Toast job title, e.g. "Server", "Bartender" -- feeds the FOH-vs-Bar tips split
   netSales: number;
   ccTips: number;
 }
@@ -198,6 +223,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
   const token = await getToken();
   const itemCategories = await getItemCategoryMap(token);
   const employeeNames = await getEmployeeNames(token);
+  const employeeJobTitles = await getEmployeeJobTitles(token);
   const yyyymmdd = businessDate.replace(/-/g, "");
 
   const orderGuids: string[] = [];
@@ -286,6 +312,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
         const payServerGuid: string | null = payment.server?.guid ?? employeeGuid;
         if (payServerGuid) {
           const payServerName = employeeNames.get(payServerGuid) ?? "Unknown";
+          const payServerJobTitle = employeeJobTitles.get(payServerGuid) ?? "Unknown";
           const share = paymentAmountSum > 0 ? paidAmount / paymentAmountSum : 1 / (check.payments?.length || 1);
           const existing = serverActivity.get(payServerGuid);
           const netSalesShare = checkNetSales * share;
@@ -293,7 +320,13 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
             existing.netSales += netSalesShare;
             existing.ccTips += tip;
           } else {
-            serverActivity.set(payServerGuid, { employeeGuid: payServerGuid, employeeName: payServerName, netSales: netSalesShare, ccTips: tip });
+            serverActivity.set(payServerGuid, {
+              employeeGuid: payServerGuid,
+              employeeName: payServerName,
+              jobTitle: payServerJobTitle,
+              netSales: netSalesShare,
+              ccTips: tip,
+            });
           }
         }
       }

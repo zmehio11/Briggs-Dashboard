@@ -1,8 +1,18 @@
 import { Router } from "express";
 import axios from "axios";
 import { env } from "../lib/env.js";
+import { fetchDailyToastData } from "../services/toastClient.js";
 
 export const toastDebugRouter = Router();
+
+// GET /api/toast-debug/cashout?businessDate=YYYY-MM-DD -- runs the new
+// cashout/serverActivity computation for one real day, to verify the
+// numbers before wiring it into the database permanently.
+toastDebugRouter.get("/cashout", async (req, res) => {
+  const businessDate = String(req.query.businessDate ?? "");
+  const result = await fetchDailyToastData(businessDate);
+  res.json({ cashout: result.cashout, serverActivity: result.serverActivity, sales: result.sales });
+});
 
 // GET /api/toast-debug/order?businessDate=YYYY-MM-DD -- fetches one real
 // order's raw JSON for a business date, to verify field names (tip
