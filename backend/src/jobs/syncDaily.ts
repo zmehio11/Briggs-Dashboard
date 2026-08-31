@@ -1,10 +1,17 @@
 import { format, subDays } from "date-fns";
 import { prisma } from "../lib/prisma.js";
 import { fetchDailyToastData } from "../services/toastClient.js";
-import { fetchDailyLaborDetail } from "../services/pushOperationsClient.js";
+import { fetchDailyLaborDetail, fetchNamedEmployeeHours } from "../services/pushOperationsClient.js";
 import { fetchDailyCogs, fetchRecipeCosts } from "../services/marginEdgeClient.js";
 import { normalizeItemName } from "../lib/normalizeItemName.js";
 import { classifyPosition } from "../lib/classifyPosition.js";
+import { classifyTipPool } from "../lib/classifyTipPool.js";
+
+// FOH servers give an 8.5% house cut on their own net sales; Bar servers
+// give 7%. Confirmed with the owner as current fixed policy against the
+// real Aug 09/16/23 cashout spreadsheets.
+const FOH_SERVER_HOUSE_CUT_PCT = 0.085;
+const BAR_SERVER_HOUSE_CUT_PCT = 0.07;
 
 /**
  * Pulls one business date's data from Toast, Push Operations, and
@@ -16,7 +23,7 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
   const date = new Date(`${businessDate}T00:00:00Z`);
 
   await runSource("toast", async () => {
-    const { sales, items, flags } = await fetchDailyToastData(businessDate);
+    const { sales, items, flags, cashout, serverActivity } = await fetchDailyToastData(businessDate);
     await prisma.dailySales.upsert({
       where: { businessDate: date },
       create: {
@@ -65,7 +72,93 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
         skipDuplicates: true,
       });
     }
-    return 1 + items.length + flags.length;
+    await prisma.dailyCashout.upsert({
+      where: { businessDate: date },
+      create: {
+        businessDate: date,
+        foodSales: cashout.categorySales.food,
+        liquorSales: cashout.categorySales.liquor,
+        wineSales: cashout.categorySales.wine,
+        beerSales: cashout.categorySales.beer,
+        naBevSales: cashout.categorySales.naBev,
+        otherSales: cashout.categorySales.other,
+        discounts: cashout.discounts,
+        voids: cashout.voids,
+        gst: cashout.gst,
+        ccTipsTotal: cashout.ccTipsTotal,
+        cashPayments: cashout.cashPayments,
+        cardPayments: cashout.cardPayments,
+        otherPayments: cashout.otherPayments,
+        covers: sales.covers,
+      },
+      update: {
+        foodSales: cashout.categorySales.food,
+        liquorSales: cashout.categorySales.liquor,
+        wineSales: cashout.categorySales.wine,
+        beerSales: cashout.categorySales.beer,
+        naBevSales: cashout.categorySales.naBev,
+        otherSales: cashout.categorySales.other,
+        discounts: cashout.discounts,
+        voids: cashout.voids,
+        gst: cashout.gst,
+        ccTipsTotal: cashout.ccTipsTotal,
+        cashPayments: cashout.cashPayments,
+        cardPayments: cashout.cardPayments,
+        otherPayments: cashout.otherPayments,
+        covers: sales.covers,
+      },
+    });
+
+    // Only Server/Bartender job titles participate in the tips-payout
+    // server pools -- anyone else (managers, etc.) processing a payment
+    // isn't part of this specific tip mechanic.
+    let serverRowsWritten = 0;
+    for (const s of serverActivity) {
+      const role = s.jobTitle === "Server" ? "FOH_Server" : s.jobTitle === "Bartender" ? "Bar_Server" : null;
+      if (!role) continue;
+      const houseCutPct = role === "FOH_Server" ? FOH_SERVER_HOUSE_CUT_PCT : BAR_SERVER_HOUSE_CUT_PCT;
+      await prisma.dailyServerTips.upsert({
+        where: { businessDate_employeeGuid: { businessDate: date, employeeGuid: s.employeeGuid } },
+        create: {
+          businessDate: date,
+          employeeGuid: s.employeeGuid,
+          employeeName: s.employeeName,
+          role,
+          netSales: s.netSales,
+          ccTips: s.ccTips,
+          houseCutPct,
+        },
+        update: { employeeName: s.employeeName, role, netSales: s.netSales, ccTips: s.ccTips, houseCutPct },
+      });
+      serverRowsWritten += 1;
+    }
+
+    return 1 + items.length + flags.length + 1 + serverRowsWritten;
+  });
+
+  await runSource("push_tip_hours", async () => {
+    const rows = await fetchNamedEmployeeHours(businessDate);
+    for (const r of rows) {
+      await prisma.dailyEmployeeTipHours.upsert({
+        where: { businessDate_employeeId_positionName: { businessDate: date, employeeId: r.employeeId, positionName: r.positionName } },
+        create: {
+          businessDate: date,
+          employeeId: r.employeeId,
+          employeeName: r.employeeName,
+          positionName: r.positionName,
+          pool: classifyTipPool(r.positionName),
+          hours: r.hours,
+          cost: r.cost,
+        },
+        update: {
+          employeeName: r.employeeName,
+          pool: classifyTipPool(r.positionName),
+          hours: r.hours,
+          cost: r.cost,
+        },
+      });
+    }
+    return rows.length;
   });
 
   await runSource("push_operations", async () => {
