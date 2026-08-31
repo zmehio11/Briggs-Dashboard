@@ -145,3 +145,29 @@ toastDebugRouter.get("/reconcile", async (req, res) => {
 
   res.json({ totalCheckAmount: Math.round(totalCheckAmount * 100) / 100, totalSelectionSum: Math.round(totalSelectionSum * 100) / 100, mismatchedChecks: rows });
 });
+
+// GET /api/toast-debug/employees-full -- every employee (including
+// deleted/duplicate ones), to check for duplicate accounts for the same
+// real person.
+toastDebugRouter.get("/employees-full", async (_req, res) => {
+  const { data: authData } = await axios.post(`${env.toast.baseUrl}/authentication/v1/authentication/login`, {
+    clientId: env.toast.clientId,
+    clientSecret: env.toast.clientSecret,
+    userAccessType: "TOAST_MACHINE_CLIENT",
+  });
+  const token = authData?.token?.accessToken;
+  const headers = { Authorization: `Bearer ${token}`, "Toast-Restaurant-External-ID": env.toast.restaurantGuid };
+
+  const { data } = await axios.get(`${env.toast.baseUrl}/labor/v1/employees`, { headers });
+  const list: any[] = Array.isArray(data) ? data : [];
+  res.json(
+    list.map((e) => ({
+      guid: e.guid,
+      firstName: e.firstName,
+      lastName: e.lastName,
+      deleted: e.deleted,
+      createdDate: e.createdDate,
+      email: e.email,
+    }))
+  );
+});
