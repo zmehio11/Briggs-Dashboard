@@ -110,22 +110,20 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
     });
 
     // Bar_Server (7% house cut, redirected into the Bar Team hourly pool)
-    // is for the two SHARED bar-terminal logins only -- confirmed against
-    // the real spreadsheet, where a named bartender (Carl Weiss, Toast job
-    // title "Bartender") still gets the FOH 8.5% rate individually, not
-    // the Bar rate. Toast job title alone doesn't decide this; identity
-    // does. Any other Server/Bartender job title with a real name is
-    // FOH_Server; non-tipped roles (managers, etc.) processing a payment
-    // aren't part of this tip mechanic at all.
+    // is for the two SHARED bar-terminal logins only. Every other named
+    // individual who personally processed a real payment is FOH_Server
+    // (8.5%), regardless of Toast job title -- confirmed against the real
+    // spreadsheet twice over: a named bartender (Carl Weiss, job title
+    // "Bartender") gets the FOH rate, not Bar; and managers who cover a
+    // shift and personally serve tables (Natalie Stewart -- "Shift
+    // Manager", Jenn Wastle -- "General Manager", Bo Tkachenko -- "Bar
+    // Manager") show up with real individual net-sales-based tips too,
+    // not zero. Job title never decides this; whether the payment was
+    // processed under the two shared logins or a real person's login does.
     let serverRowsWritten = 0;
     for (const s of serverActivity) {
       const isGenericBarLogin = s.employeeName === "Bar Day" || s.employeeName === "Bar Night";
-      const role = isGenericBarLogin
-        ? "Bar_Server"
-        : s.jobTitle === "Server" || s.jobTitle === "Bartender"
-          ? "FOH_Server"
-          : null;
-      if (!role) continue;
+      const role = isGenericBarLogin ? "Bar_Server" : "FOH_Server";
       const houseCutPct = role === "FOH_Server" ? FOH_SERVER_HOUSE_CUT_PCT : BAR_SERVER_HOUSE_CUT_PCT;
       await prisma.dailyServerTips.upsert({
         where: { businessDate_employeeGuid: { businessDate: date, employeeGuid: s.employeeGuid } },
