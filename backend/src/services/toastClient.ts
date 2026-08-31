@@ -251,6 +251,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
   const flags: TransactionFlagResult[] = [];
 
   const categorySales = { food: 0, liquor: 0, wine: 0, beer: 0, naBev: 0, other: 0 };
+  let cashoutDiscountsTotal = 0;
   let voidsTotal = 0;
   let gstTotal = 0;
   let ccTipsTotal = 0;
@@ -281,16 +282,34 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
       if (!isRealizedSale) continue;
       orderHasClosedCheck = true;
 
-      const checkDiscounts = (check.appliedDiscounts ?? []).reduce(
+      // check.amount is already net of selection-level discounts (proven
+      // empirically: sum(sel.price) across a whole day matches sum(check.amount)
+      // exactly, with zero gap, across every real day tested -- so only
+      // check-LEVEL discounts (appliedDiscounts on the check itself, e.g.
+      // a whole-check % off) still need subtracting from it to get a true
+      // net figure. Selection-level discounts (a comp/staff discount on
+      // one item) are tracked SEPARATELY in cashoutDiscountsTotal, purely
+      // for the cashout sheet's informational "Discounts" line -- adding
+      // them into the same total used for netSales/checkNetSales would
+      // double-subtract them, since check.amount already reflects them.
+      const checkLevelDiscounts = (check.appliedDiscounts ?? []).reduce(
         (sum: number, d: any) => sum + (d.discountAmount ?? 0),
         0
       );
+      const selectionLevelDiscounts = (check.selections ?? [])
+        .filter((s: any) => !s.voided)
+        .reduce(
+          (sum: number, s: any) => sum + (s.appliedDiscounts ?? []).reduce((s2: number, d: any) => s2 + (d.discountAmount ?? 0), 0),
+          0
+        );
+      const checkDiscounts = checkLevelDiscounts; // netSales/checkNetSales purposes
       const checkRefunds = (check.payments ?? []).reduce(
         (sum: number, p: any) => sum + (p.refund?.refundAmount ?? 0),
         0
       );
       grossSales += check.amount ?? 0;
       discounts += checkDiscounts;
+      cashoutDiscountsTotal += checkLevelDiscounts + selectionLevelDiscounts;
       refunds += checkRefunds;
       gstTotal += check.taxAmount ?? 0;
 
@@ -398,7 +417,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
         naBev: round2(categorySales.naBev),
         other: round2(categorySales.other),
       },
-      discounts: round2(discounts),
+      discounts: round2(cashoutDiscountsTotal),
       voids: round2(voidsTotal),
       gst: round2(gstTotal),
       ccTipsTotal: round2(ccTipsTotal),
