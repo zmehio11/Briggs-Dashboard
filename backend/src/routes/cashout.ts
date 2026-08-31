@@ -27,12 +27,48 @@ cashoutRouter.get("/", async (req, res) => {
   const start = req.query.start ? new Date(String(req.query.start)) : new Date("2000-01-01");
   const end = req.query.end ? new Date(String(req.query.end)) : new Date();
 
-  const [dailyRows, serverTips, employeeHours, leadershipPresence] = await Promise.all([
+  const [dailyRows, serverTips, employeeHours, leadershipPresence, overrides] = await Promise.all([
     prisma.dailyCashout.findMany({ where: { businessDate: { gte: start, lte: end } }, orderBy: { businessDate: "asc" } }),
     prisma.dailyServerTips.findMany({ where: { businessDate: { gte: start, lte: end } } }),
     prisma.dailyEmployeeTipHours.findMany({ where: { businessDate: { gte: start, lte: end } } }),
     prisma.dailyLeadershipPresence.findMany({ where: { businessDate: { gte: start, lte: end } } }),
+    prisma.serverTipsOverride.findMany({ where: { businessDate: { gte: start, lte: end } } }),
   ]);
+
+  // A manual override always wins for that one (businessDate, employeeGuid)
+  // -- applied here, before weekly aggregation, so it corrects the right
+  // day rather than just nudging the week total.
+  const overrideByKey = new Map(overrides.map((o) => [`${o.businessDate.toISOString().slice(0, 10)}::${o.employeeGuid}`, o]));
+  const matchedOverrideKeys = new Set<string>();
+  const correctedServerTips = serverTips.map((t) => {
+    const key = `${t.businessDate.toISOString().slice(0, 10)}::${t.employeeGuid}`;
+    const override = overrideByKey.get(key);
+    if (!override) return t;
+    matchedOverrideKeys.add(key);
+    return {
+      ...t,
+      netSales: override.netSales ?? t.netSales,
+      ccTips: override.ccTips ?? t.ccTips,
+    };
+  });
+  // An override with no matching synced row (an off-POS transaction Toast
+  // never saw at all) still needs to count -- inject it as a new row.
+  // Determining FOH-vs-Bar role/house-cut for a brand-new row isn't
+  // derivable from Toast here, so it defaults to FOH_Server/8.5%; correct
+  // via a second override field if that's ever wrong.
+  for (const o of overrides) {
+    const key = `${o.businessDate.toISOString().slice(0, 10)}::${o.employeeGuid}`;
+    if (matchedOverrideKeys.has(key)) continue;
+    correctedServerTips.push({
+      businessDate: o.businessDate,
+      employeeGuid: o.employeeGuid,
+      employeeName: o.employeeName,
+      role: "FOH_Server",
+      netSales: o.netSales ?? 0,
+      ccTips: o.ccTips ?? 0,
+      houseCutPct: 0.085,
+    } as any);
+  }
 
   // --- Daily + weekly cashout totals ---
   const days = dailyRows.map((r) => ({
@@ -79,7 +115,7 @@ cashoutRouter.get("/", async (req, res) => {
 
   // --- Tips payout: FOH + Bar servers (individual net-sales-based) ---
   const serverTotals = new Map<string, { employeeGuid: string; employeeName: string; role: string; netSales: number; ccTips: number; houseCutPct: number }>();
-  for (const t of serverTips) {
+  for (const t of correctedServerTips) {
     const existing = serverTotals.get(t.employeeGuid);
     if (existing) {
       existing.netSales += Number(t.netSales);
@@ -195,4 +231,54 @@ cashoutRouter.post("/leadership-presence", async (req, res) => {
     update: { present },
   });
   res.json({ businessDate, leaderName: row.leaderName, present: row.present });
+});
+
+// GET /api/cashout/server-tips-overrides?start=&end= -- current overrides for the range.
+cashoutRouter.get("/server-tips-overrides", async (req, res) => {
+  const start = req.query.start ? new Date(String(req.query.start)) : new Date("2000-01-01");
+  const end = req.query.end ? new Date(String(req.query.end)) : new Date();
+  const rows = await prisma.serverTipsOverride.findMany({ where: { businessDate: { gte: start, lte: end } }, orderBy: { businessDate: "asc" } });
+  res.json(
+    rows.map((r) => ({
+      businessDate: r.businessDate.toISOString().slice(0, 10),
+      employeeGuid: r.employeeGuid,
+      employeeName: r.employeeName,
+      netSales: r.netSales != null ? Number(r.netSales) : null,
+      ccTips: r.ccTips != null ? Number(r.ccTips) : null,
+      note: r.note,
+    }))
+  );
+});
+
+// POST /api/cashout/server-tips-overrides -- set a correction for one server's one day.
+// netSales/ccTips: pass a number to override, omit/null to leave that field as Toast reported it.
+cashoutRouter.post("/server-tips-overrides", async (req, res) => {
+  const { businessDate, employeeGuid, employeeName, netSales, ccTips, note } = req.body ?? {};
+  if (!businessDate || !employeeGuid || !employeeName) {
+    res.status(400).json({ error: "businessDate, employeeGuid, and employeeName are required" });
+    return;
+  }
+  const date = new Date(`${businessDate}T00:00:00Z`);
+  const row = await prisma.serverTipsOverride.upsert({
+    where: { businessDate_employeeGuid: { businessDate: date, employeeGuid } },
+    create: { businessDate: date, employeeGuid, employeeName, netSales: netSales ?? null, ccTips: ccTips ?? null, note: note ?? null },
+    update: { employeeName, netSales: netSales ?? null, ccTips: ccTips ?? null, note: note ?? null },
+  });
+  res.status(201).json(row);
+});
+
+// DELETE /api/cashout/server-tips-overrides -- remove a correction (revert to Toast's figure).
+cashoutRouter.delete("/server-tips-overrides", async (req, res) => {
+  const { businessDate, employeeGuid } = req.body ?? {};
+  if (!businessDate || !employeeGuid) {
+    res.status(400).json({ error: "businessDate and employeeGuid are required" });
+    return;
+  }
+  const date = new Date(`${businessDate}T00:00:00Z`);
+  try {
+    await prisma.serverTipsOverride.delete({ where: { businessDate_employeeGuid: { businessDate: date, employeeGuid } } });
+    res.status(204).end();
+  } catch {
+    res.status(404).json({ error: "not found" });
+  }
 });

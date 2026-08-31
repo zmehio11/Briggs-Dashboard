@@ -191,10 +191,14 @@ model DailyCashout {
 }
 
 /// One row per business date + FOH/Bar server (by Toast payment.server),
-/// feeding the Tips Payout sheet's individual server rows. role/houseCut
-/// are derived from the server's Toast job title (Server = 8.5% cut,
-/// Bartender = 7%) at sync time, not recomputed at read time, so a later
-/// job-title change doesn't retroactively rewrite historical payouts.
+/// feeding the Tips Payout sheet's individual server rows. role is
+/// FOH_Server (8.5% house cut) for any named individual, Bar_Server (7%,
+/// redirected to the Bar Team hourly pool) only for the two shared
+/// "Bar Day"/"Bar Night" POS logins -- confirmed against the real
+/// spreadsheet that a named bartender still gets 8.5% individually, not
+/// the Bar rate (Toast job title alone doesn't decide this). Computed at
+/// sync time, not read time, so a later reclassification doesn't
+/// retroactively rewrite historical payouts.
 model DailyServerTips {
   id           String   @id @default(cuid())
   businessDate DateTime @db.Date
@@ -204,6 +208,28 @@ model DailyServerTips {
   netSales     Decimal  @db.Decimal(12, 2)
   ccTips       Decimal  @db.Decimal(12, 2)
   houseCutPct  Decimal  @db.Decimal(5, 4)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, employeeGuid])
+  @@index([businessDate])
+}
+
+/// Manual correction for one server's one day, when the Toast-sourced
+/// figure is known to be wrong -- e.g. a private event or off-POS tab that
+/// never went through Toast at all, so no amount of API digging will ever
+/// surface it. Always takes priority over the synced DailyServerTips row
+/// for that (businessDate, employeeGuid) at read time; a null field means
+/// "don't override this one," so a manager can fix just netSales while
+/// leaving ccTips as Toast reported it, or vice versa.
+model ServerTipsOverride {
+  id           String   @id @default(cuid())
+  businessDate DateTime @db.Date
+  employeeGuid String
+  employeeName String
+  netSales     Decimal? @db.Decimal(12, 2)
+  ccTips       Decimal? @db.Decimal(12, 2)
+  note         String?
+  createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@unique([businessDate, employeeGuid])
