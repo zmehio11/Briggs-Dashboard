@@ -332,10 +332,17 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
       }
 
       for (const sel of check.selections ?? []) {
-        if (sel.voided || !sel.item?.guid) continue; // skip voided lines and non-menu-item selections (gift cards, etc.)
-        const bucket = categoryBucket(itemCategories.get(sel.item.guid) ?? null);
+        if (sel.voided) continue;
+        // Every non-voided selection counts toward category sales (even
+        // one with no item.guid -- gift cards, generic "open item" lines
+        // -- bucketed as "other"), so categorySales reconciles exactly to
+        // the check's net sales for the cashout sheet. The item.guid-keyed
+        // itemTotals map below is separately scoped to the Items page,
+        // which can't categorize a selection it can't identify.
+        const bucket = categoryBucket(sel.item?.guid ? (itemCategories.get(sel.item.guid) ?? null) : null);
         categorySales[bucket] += sel.preDiscountPrice ?? sel.price ?? 0;
 
+        if (!sel.item?.guid) continue;
         const existing = itemTotals.get(sel.item.guid);
         const quantity = sel.quantity ?? 0;
         const revenue = sel.preDiscountPrice ?? sel.price ?? 0;
