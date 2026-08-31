@@ -136,7 +136,7 @@ toastDebugRouter.get("/reconcile", async (req, res) => {
             preDiscountPrice: s.preDiscountPrice,
             itemGuid: s.item?.guid,
             selectionType: s.selectionType,
-            fulfillmentStatus: s.fulfillmentStatus,
+            fulfillmentStatus: s.fulfillmentStatus, quantity: s.quantity, appliedDiscounts: s.appliedDiscounts,
           })),
         });
       }
