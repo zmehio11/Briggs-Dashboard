@@ -80,3 +80,68 @@ toastDebugRouter.get("/jobs", async (_req, res) => {
   const { data } = await axios.get(`${env.toast.baseUrl}/labor/v1/jobs`, { headers });
   res.json(data);
 });
+
+// GET /api/toast-debug/reconcile?businessDate=YYYY-MM-DD -- per-check
+// breakdown of check.amount vs sum of its own selections' preDiscountPrice,
+// to find exactly where the two diverge.
+toastDebugRouter.get("/reconcile", async (req, res) => {
+  const businessDate = String(req.query.businessDate ?? "");
+  const yyyymmdd = businessDate.replace(/-/g, "");
+
+  const { data: authData } = await axios.post(`${env.toast.baseUrl}/authentication/v1/authentication/login`, {
+    clientId: env.toast.clientId,
+    clientSecret: env.toast.clientSecret,
+    userAccessType: "TOAST_MACHINE_CLIENT",
+  });
+  const token = authData?.token?.accessToken;
+  const headers = { Authorization: `Bearer ${token}`, "Toast-Restaurant-External-ID": env.toast.restaurantGuid };
+
+  const orderGuids: string[] = [];
+  let page = 1;
+  while (true) {
+    const { data } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders`, {
+      headers,
+      params: { businessDate: yyyymmdd, page, pageSize: 100 },
+    });
+    const batch: string[] = Array.isArray(data) ? data : data?.orders ?? [];
+    orderGuids.push(...batch);
+    if (batch.length < 100) break;
+    page += 1;
+  }
+
+  const rows: any[] = [];
+  let totalCheckAmount = 0;
+  let totalSelectionSum = 0;
+  for (const guid of orderGuids) {
+    const { data: order } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders/${guid}`, { headers });
+    if (order.voided) continue;
+    for (const check of order.checks ?? []) {
+      if (check.voided || check.paymentStatus !== "CLOSED") continue;
+      const selSum = (check.selections ?? [])
+        .filter((s: any) => !s.voided)
+        .reduce((sum: number, s: any) => sum + (s.preDiscountPrice ?? s.price ?? 0), 0);
+      totalCheckAmount += check.amount ?? 0;
+      totalSelectionSum += selSum;
+      const diff = selSum - (check.amount ?? 0);
+      if (Math.abs(diff) > 0.01) {
+        rows.push({
+          checkGuid: check.guid,
+          checkAmount: check.amount,
+          selectionSum: Math.round(selSum * 100) / 100,
+          diff: Math.round(diff * 100) / 100,
+          selections: (check.selections ?? []).map((s: any) => ({
+            displayName: s.displayName,
+            voided: s.voided,
+            price: s.price,
+            preDiscountPrice: s.preDiscountPrice,
+            itemGuid: s.item?.guid,
+            selectionType: s.selectionType,
+            fulfillmentStatus: s.fulfillmentStatus,
+          })),
+        });
+      }
+    }
+  }
+
+  res.json({ totalCheckAmount: Math.round(totalCheckAmount * 100) / 100, totalSelectionSum: Math.round(totalSelectionSum * 100) / 100, mismatchedChecks: rows });
+});
