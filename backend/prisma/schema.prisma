@@ -166,6 +166,85 @@ model ItemCostMapping {
   updatedAt DateTime @updatedAt
 }
 
+/// One row per business date -- the "Daily Sales & Cash Report" sheet's
+/// fields, sourced from Toast. Cash Tips / Opening Float / Actual Cash
+/// Count are deliberately not modeled: confirmed unused by Briggs (cash
+/// tips stay with servers, no drawer float/count tracked).
+model DailyCashout {
+  id            String   @id @default(cuid())
+  businessDate  DateTime @unique @db.Date
+  foodSales     Decimal  @db.Decimal(12, 2) @default(0)
+  liquorSales   Decimal  @db.Decimal(12, 2) @default(0)
+  wineSales     Decimal  @db.Decimal(12, 2) @default(0)
+  beerSales     Decimal  @db.Decimal(12, 2) @default(0)
+  naBevSales    Decimal  @db.Decimal(12, 2) @default(0)
+  otherSales    Decimal  @db.Decimal(12, 2) @default(0)
+  discounts     Decimal  @db.Decimal(12, 2) @default(0)
+  voids         Decimal  @db.Decimal(12, 2) @default(0)
+  gst           Decimal  @db.Decimal(12, 2) @default(0)
+  ccTipsTotal   Decimal  @db.Decimal(12, 2) @default(0)
+  cashPayments  Decimal  @db.Decimal(12, 2) @default(0)
+  cardPayments  Decimal  @db.Decimal(12, 2) @default(0)
+  otherPayments Decimal  @db.Decimal(12, 2) @default(0)
+  covers        Int      @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+/// One row per business date + FOH/Bar server (by Toast payment.server),
+/// feeding the Tips Payout sheet's individual server rows. role/houseCut
+/// are derived from the server's Toast job title (Server = 8.5% cut,
+/// Bartender = 7%) at sync time, not recomputed at read time, so a later
+/// job-title change doesn't retroactively rewrite historical payouts.
+model DailyServerTips {
+  id           String   @id @default(cuid())
+  businessDate DateTime @db.Date
+  employeeGuid String
+  employeeName String
+  role         String // "FOH_Server" | "Bar_Server"
+  netSales     Decimal  @db.Decimal(12, 2)
+  ccTips       Decimal  @db.Decimal(12, 2)
+  houseCutPct  Decimal  @db.Decimal(5, 4)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, employeeGuid])
+  @@index([businessDate])
+}
+
+/// One row per business date + employee + position, from Push Operations
+/// -- named hours for the tips-payout hourly pools (BOH/Support/Bar). A
+/// person can have more than one row on the same date if they worked more
+/// than one position that day (e.g. bartender one shift, FOH manager
+/// another) -- each position's hours route to a different pool (or none,
+/// for a management position -- see classifyTipPool.ts).
+model DailyEmployeeTipHours {
+  id           String   @id @default(cuid())
+  businessDate DateTime @db.Date
+  employeeId   Int
+  employeeName String
+  positionName String
+  pool         String? // "BOH" | "Support" | "Bar" | null (not pool-eligible)
+  hours        Decimal  @db.Decimal(8, 2)
+  cost         Decimal  @db.Decimal(12, 2)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, employeeId, positionName])
+  @@index([businessDate])
+}
+
+/// The one genuinely-manual field in the whole cashout tab: a flat
+/// per-day presence toggle for the fixed 3-person Leadership pool
+/// (confirmed with the owner -- not derived from Push's real clocked
+/// hours for these 3 people).
+model DailyLeadershipPresence {
+  id           String   @id @default(cuid())
+  businessDate DateTime @db.Date
+  leaderName   String
+  present      Boolean  @default(false)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, leaderName])
+}
+
 /// Audit trail for the nightly sync job.
 model SyncLog {
   id         String   @id @default(cuid())

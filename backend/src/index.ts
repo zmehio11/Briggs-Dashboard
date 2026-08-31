@@ -14,6 +14,8 @@ import { quickbooksRouter } from "./routes/quickbooks.js";
 import { marginEdgeRouter } from "./routes/marginEdge.js";
 import { toastDebugRouter } from "./routes/toastDebug.js";
 import { pushDebugRouter } from "./routes/pushDebug.js";
+import { cashoutRouter } from "./routes/cashout.js";
+import { syncNowRouter } from "./routes/syncNow.js";
 import { expensesRouter } from "./routes/expenses.js";
 import { syncYesterday } from "./jobs/syncDaily.js";
 import { syncQuickbooksExpenses } from "./jobs/syncQuickbooks.js";
@@ -35,6 +37,8 @@ app.use("/api/quickbooks", quickbooksRouter);
 app.use("/api/margin-edge", marginEdgeRouter);
 app.use("/api/toast-debug", toastDebugRouter);
 app.use("/api/push-debug", pushDebugRouter);
+app.use("/api/cashout", cashoutRouter);
+app.use("/api/sync-now", syncNowRouter);
 app.use("/api/expenses", expensesRouter);
 
 app.listen(env.port, () => {
