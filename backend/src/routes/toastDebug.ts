@@ -37,3 +37,21 @@ toastDebugRouter.get("/order", async (req, res) => {
   }
   res.json({ orderCount: list.length, sample: orders });
 });
+
+// GET /api/toast-debug/employees -- raw sample of /labor/v1/employees, to
+// check whether Toast exposes a job/role field (Server vs Bartender)
+// distinct from Push's payroll position, needed for the tips-payout
+// FOH-vs-Bar split.
+toastDebugRouter.get("/employees", async (_req, res) => {
+  const { data: authData } = await axios.post(`${env.toast.baseUrl}/authentication/v1/authentication/login`, {
+    clientId: env.toast.clientId,
+    clientSecret: env.toast.clientSecret,
+    userAccessType: "TOAST_MACHINE_CLIENT",
+  });
+  const token = authData?.token?.accessToken;
+  const headers = { Authorization: `Bearer ${token}`, "Toast-Restaurant-External-ID": env.toast.restaurantGuid };
+
+  const { data } = await axios.get(`${env.toast.baseUrl}/labor/v1/employees`, { headers });
+  const list: any[] = Array.isArray(data) ? data : [];
+  res.json({ employeeCount: list.length, sample: list.slice(0, 8) });
+});

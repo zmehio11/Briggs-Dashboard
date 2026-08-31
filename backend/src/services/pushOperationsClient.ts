@@ -50,14 +50,22 @@ export interface DailyLaborDetail {
   byPosition: LaborByPositionResult[];
 }
 
+/** One real shift's worked hours -- name kept (not aggregated away), for the tips-payout hourly pool distribution. */
+export interface NamedEmployeeHoursResult {
+  employeeId: number;
+  employeeName: string;
+  positionName: string;
+  hours: number;
+  cost: number;
+}
+
 /**
- * Single call to GET /labour/employee, reduced into both a daily total and
- * a per-position breakdown -- deriving the total from the same rows as the
- * breakdown (rather than a second call to the labour-actuals endpoint)
- * guarantees FOH + BOH + Management always sums exactly to the total, and
- * gives a real employee count for free.
+ * Raw "reg" (actually worked, not vacation/other) rows for one business
+ * date -- shared by fetchDailyLaborDetail (aggregates away identity) and
+ * fetchNamedEmployeeHours (keeps it), so both derive from one API call
+ * instead of hitting /labour/employee twice per day.
  */
-export async function fetchDailyLaborDetail(businessDate: string): Promise<DailyLaborDetail> {
+async function fetchRawLaborRows(businessDate: string): Promise<any[]> {
   const { data } = await axios.get(`${env.pushOperations.baseUrl}/labour/employee`, {
     headers: { Authorization: `Bearer ${env.pushOperations.apiKey}` },
     params: {
@@ -68,14 +76,24 @@ export async function fetchDailyLaborDetail(businessDate: string): Promise<Daily
       "earnings-deductions": false,
     },
   });
+  return (data?.data ?? []).filter((row: any) => row.labourType === "reg");
+}
+
+/**
+ * Reduced into both a daily total and a per-position breakdown -- deriving
+ * the total from the same rows as the breakdown guarantees FOH + BOH +
+ * Management always sums exactly to the total, and gives a real employee
+ * count for free.
+ */
+export async function fetchDailyLaborDetail(businessDate: string): Promise<DailyLaborDetail> {
+  const rows = await fetchRawLaborRows(businessDate);
 
   const byPosition = new Map<string, { hours: number; cost: number; employeeIds: Set<number> }>();
   const allEmployeeIds = new Set<number>();
   let totalHours = 0;
   let totalCost = 0;
 
-  for (const row of data?.data ?? []) {
-    if (row.labourType !== "reg") continue; // skip vacation/other non-worked rows
+  for (const row of rows) {
     const position: string = row.positionName || "Unclassified";
     const hours = row.hours ?? 0;
     const cost = row.costs ?? 0;
@@ -109,6 +127,39 @@ export async function fetchDailyLaborDetail(businessDate: string): Promise<Daily
       employeeCount: v.employeeIds.size,
     })),
   };
+}
+
+/**
+ * Named per-shift hours for the tips-payout hourly pools (BOH/Support/Bar)
+ * -- same underlying rows as fetchDailyLaborDetail, but keeping
+ * employeeName + positionName per row instead of aggregating them away.
+ * A person can have multiple rows on the same date if they worked more
+ * than one position (e.g. bartender one shift, FOH manager another) --
+ * summed by (employeeId, positionName) rather than collapsed to one row
+ * per person, since each position routes to a different tip pool.
+ */
+export async function fetchNamedEmployeeHours(businessDate: string): Promise<NamedEmployeeHoursResult[]> {
+  const rows = await fetchRawLaborRows(businessDate);
+
+  const byKey = new Map<string, NamedEmployeeHoursResult>();
+  for (const row of rows) {
+    const positionName: string = row.positionName || "Unclassified";
+    const key = `${row.employeeId}::${positionName}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.hours += row.hours ?? 0;
+      existing.cost += row.costs ?? 0;
+    } else {
+      byKey.set(key, {
+        employeeId: row.employeeId,
+        employeeName: row.employeeName || "Unknown",
+        positionName,
+        hours: row.hours ?? 0,
+        cost: row.costs ?? 0,
+      });
+    }
+  }
+  return Array.from(byKey.values()).map((r) => ({ ...r, hours: round2(r.hours), cost: round2(r.cost) }));
 }
 
 function round2(n: number): number {

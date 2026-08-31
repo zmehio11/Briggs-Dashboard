@@ -139,16 +139,60 @@ export interface TransactionFlagResult {
   description: string;
 }
 
+export interface DailyCashoutResult {
+  businessDate: string;
+  categorySales: { food: number; liquor: number; wine: number; beer: number; naBev: number; other: number };
+  discounts: number;
+  voids: number;
+  gst: number;
+  ccTipsTotal: number;
+  cashPayments: number;
+  cardPayments: number;
+  otherPayments: number;
+}
+
+export interface ServerActivityResult {
+  employeeGuid: string;
+  employeeName: string;
+  netSales: number;
+  ccTips: number;
+}
+
 export interface DailyToastData {
   sales: DailySalesResult;
   items: ItemSalesResult[];
   flags: TransactionFlagResult[];
+  cashout: DailyCashoutResult;
+  serverActivity: ServerActivityResult[];
+}
+
+/** Buckets a Toast sales-category name into the 6 categories the cashout sheet tracks. */
+function categoryBucket(categoryName: string | null): "food" | "liquor" | "wine" | "beer" | "naBev" | "other" {
+  if (categoryName === "Food") return "food";
+  if (categoryName === "Liquor") return "liquor";
+  if (categoryName === "Wine") return "wine";
+  if (categoryName === "Bottled Beer" || categoryName === "Draft Beer") return "beer";
+  if (categoryName === "NA Beverage") return "naBev";
+  return "other";
 }
 
 /**
- * Fetches every order for a business date and reduces it into both daily
- * sales totals and per-item sales in a single pass — avoids fetching the
- * same ~dozens of orders twice for two separate metrics.
+ * Fetches every order for a business date and reduces it into daily sales
+ * totals, per-item sales, cashout-sheet totals, and per-server activity in
+ * a single pass — avoids fetching the same ~dozens of orders twice.
+ *
+ * Cashout-sheet fields verified against a real order's raw JSON before
+ * building this (see GET /api/toast-debug/order): `payment.tipAmount` is a
+ * real, reliable field for CC tips; `payment.server.guid` identifies who
+ * processed that specific payment (used instead of `check.openedBy`,
+ * since a check can be reassigned after opening). Two fields are NOT
+ * reliably derivable from Toast and are left at 0 pending confirmation:
+ * "Promo" (no distinct signal separating it from "Discount" in Toast's
+ * discount data) and "Third-Party Apps" payments (no sample of a
+ * third-party order seen yet to confirm the field). Net sales for a check
+ * with multiple payments (split checks) is attributed to each payment's
+ * server proportional to that payment's share of the check's total
+ * payment amount -- worth confirming against a real split-check example.
  */
 export async function fetchDailyToastData(businessDate: string): Promise<DailyToastData> {
   const token = await getToken();
@@ -179,6 +223,15 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
   let covers = 0;
   const itemTotals = new Map<string, ItemSalesResult>();
   const flags: TransactionFlagResult[] = [];
+
+  const categorySales = { food: 0, liquor: 0, wine: 0, beer: 0, naBev: 0, other: 0 };
+  let voidsTotal = 0;
+  let gstTotal = 0;
+  let ccTipsTotal = 0;
+  let cashPayments = 0;
+  let cardPayments = 0;
+  let otherPayments = 0;
+  const serverActivity = new Map<string, ServerActivityResult>();
 
   for (const guid of orderGuids) {
     const { data: order } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders/${guid}`, {
@@ -213,9 +266,43 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
       grossSales += check.amount ?? 0;
       discounts += checkDiscounts;
       refunds += checkRefunds;
+      gstTotal += check.taxAmount ?? 0;
+
+      const voidedSelections = (check.selections ?? []).filter((s: any) => s.voided);
+      voidsTotal += voidedSelections.reduce((sum: number, s: any) => sum + (s.price ?? 0), 0);
+
+      // Payments: cash/card totals (amount + tip = what the guest was
+      // actually charged), CC tips, and per-server net sales/tips.
+      const checkNetSales = (check.amount ?? 0) - checkDiscounts - checkRefunds;
+      const paymentAmountSum = (check.payments ?? []).reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+      for (const payment of check.payments ?? []) {
+        const paidAmount = payment.amount ?? 0;
+        const tip = payment.tipAmount ?? 0;
+        if (payment.type === "CASH") cashPayments += paidAmount + tip;
+        else if (payment.type === "CREDIT" || payment.type === "DEBIT") cardPayments += paidAmount + tip;
+        else otherPayments += paidAmount + tip;
+        ccTipsTotal += tip;
+
+        const payServerGuid: string | null = payment.server?.guid ?? employeeGuid;
+        if (payServerGuid) {
+          const payServerName = employeeNames.get(payServerGuid) ?? "Unknown";
+          const share = paymentAmountSum > 0 ? paidAmount / paymentAmountSum : 1 / (check.payments?.length || 1);
+          const existing = serverActivity.get(payServerGuid);
+          const netSalesShare = checkNetSales * share;
+          if (existing) {
+            existing.netSales += netSalesShare;
+            existing.ccTips += tip;
+          } else {
+            serverActivity.set(payServerGuid, { employeeGuid: payServerGuid, employeeName: payServerName, netSales: netSalesShare, ccTips: tip });
+          }
+        }
+      }
 
       for (const sel of check.selections ?? []) {
         if (sel.voided || !sel.item?.guid) continue; // skip voided lines and non-menu-item selections (gift cards, etc.)
+        const bucket = categoryBucket(itemCategories.get(sel.item.guid) ?? null);
+        categorySales[bucket] += sel.preDiscountPrice ?? sel.price ?? 0;
+
         const existing = itemTotals.get(sel.item.guid);
         const quantity = sel.quantity ?? 0;
         const revenue = sel.preDiscountPrice ?? sel.price ?? 0;
@@ -255,6 +342,25 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
     },
     items: Array.from(itemTotals.values()).map((i) => ({ ...i, revenue: round2(i.revenue) })),
     flags,
+    cashout: {
+      businessDate,
+      categorySales: {
+        food: round2(categorySales.food),
+        liquor: round2(categorySales.liquor),
+        wine: round2(categorySales.wine),
+        beer: round2(categorySales.beer),
+        naBev: round2(categorySales.naBev),
+        other: round2(categorySales.other),
+      },
+      discounts: round2(discounts),
+      voids: round2(voidsTotal),
+      gst: round2(gstTotal),
+      ccTipsTotal: round2(ccTipsTotal),
+      cashPayments: round2(cashPayments),
+      cardPayments: round2(cardPayments),
+      otherPayments: round2(otherPayments),
+    },
+    serverActivity: Array.from(serverActivity.values()).map((s) => ({ ...s, netSales: round2(s.netSales), ccTips: round2(s.ccTips) })),
   };
 }
 
