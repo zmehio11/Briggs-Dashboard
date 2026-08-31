@@ -109,12 +109,22 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
       },
     });
 
-    // Only Server/Bartender job titles participate in the tips-payout
-    // server pools -- anyone else (managers, etc.) processing a payment
-    // isn't part of this specific tip mechanic.
+    // Bar_Server (7% house cut, redirected into the Bar Team hourly pool)
+    // is for the two SHARED bar-terminal logins only -- confirmed against
+    // the real spreadsheet, where a named bartender (Carl Weiss, Toast job
+    // title "Bartender") still gets the FOH 8.5% rate individually, not
+    // the Bar rate. Toast job title alone doesn't decide this; identity
+    // does. Any other Server/Bartender job title with a real name is
+    // FOH_Server; non-tipped roles (managers, etc.) processing a payment
+    // aren't part of this tip mechanic at all.
     let serverRowsWritten = 0;
     for (const s of serverActivity) {
-      const role = s.jobTitle === "Server" ? "FOH_Server" : s.jobTitle === "Bartender" ? "Bar_Server" : null;
+      const isGenericBarLogin = s.employeeName === "Bar Day" || s.employeeName === "Bar Night";
+      const role = isGenericBarLogin
+        ? "Bar_Server"
+        : s.jobTitle === "Server" || s.jobTitle === "Bartender"
+          ? "FOH_Server"
+          : null;
       if (!role) continue;
       const houseCutPct = role === "FOH_Server" ? FOH_SERVER_HOUSE_CUT_PCT : BAR_SERVER_HOUSE_CUT_PCT;
       await prisma.dailyServerTips.upsert({
