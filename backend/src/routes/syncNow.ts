@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { syncBusinessDate } from "../jobs/syncDaily.js";
+import { prisma } from "../lib/prisma.js";
 
 export const syncNowRouter = Router();
 
@@ -28,4 +29,12 @@ syncNowRouter.get("/", async (req, res) => {
     await syncBusinessDate(d);
   }
   res.send(`Synced ${dates.length} day(s): ${dates[0]} to ${dates[dates.length - 1]}`);
+});
+
+// GET /api/sync-now/log?limit=20 -- recent SyncLog rows, since railway
+// logs doesn't reliably surface per-request output.
+syncNowRouter.get("/log", async (req, res) => {
+  const limit = Number(req.query.limit) || 20;
+  const rows = await prisma.syncLog.findMany({ orderBy: { startedAt: "desc" }, take: limit });
+  res.json(rows);
 });
