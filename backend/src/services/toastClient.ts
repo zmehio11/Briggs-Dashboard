@@ -336,11 +336,17 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
         // Every non-voided selection counts toward category sales (even
         // one with no item.guid -- gift cards, generic "open item" lines
         // -- bucketed as "other"), so categorySales reconciles exactly to
-        // the check's net sales for the cashout sheet. The item.guid-keyed
-        // itemTotals map below is separately scoped to the Items page,
-        // which can't categorize a selection it can't identify.
+        // the check's net sales for the cashout sheet. Uses sel.price (the
+        // amount actually charged, net of any selection-level discount --
+        // comps, staff/manager discounts) rather than preDiscountPrice
+        // (the pre-discount list price): verified against real data where
+        // a 100%-comped item had price=0, preDiscountPrice=25.50 --
+        // categorySales must reflect real revenue, not phantom full-price
+        // revenue for something given away. The item.guid-keyed itemTotals
+        // map below is separately scoped to the Items page, which can't
+        // categorize a selection it can't identify.
         const bucket = categoryBucket(sel.item?.guid ? (itemCategories.get(sel.item.guid) ?? null) : null);
-        categorySales[bucket] += sel.preDiscountPrice ?? sel.price ?? 0;
+        categorySales[bucket] += sel.price ?? sel.preDiscountPrice ?? 0;
 
         if (!sel.item?.guid) continue;
         const existing = itemTotals.get(sel.item.guid);
