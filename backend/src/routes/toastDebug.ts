@@ -167,7 +167,7 @@ toastDebugRouter.get("/employees-full", async (_req, res) => {
       lastName: e.lastName,
       deleted: e.deleted,
       createdDate: e.createdDate,
-      email: e.email,
+      email: e.email, jobReferences: e.jobReferences,
     }))
   );
 });
