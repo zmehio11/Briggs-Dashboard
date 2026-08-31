@@ -223,3 +223,131 @@ export async function deleteItemMapping(itemGuid: string): Promise<void> {
   const res = await fetch(`/api/item-mappings/${itemGuid}`, { method: "DELETE" });
   if (!res.ok && res.status !== 404) throw new Error(`Delete mapping failed: ${res.status}`);
 }
+
+export interface CashoutDay {
+  businessDate: string;
+  foodSales: number;
+  liquorSales: number;
+  wineSales: number;
+  beerSales: number;
+  naBevSales: number;
+  otherSales: number;
+  totalSales: number;
+  discounts: number;
+  voids: number;
+  gst: number;
+  ccTipsTotal: number;
+  cashPayments: number;
+  cardPayments: number;
+  otherPayments: number;
+  covers: number;
+}
+
+export interface ServerPayout {
+  employeeGuid: string;
+  employeeName: string;
+  role: "FOH_Server" | "Bar_Server";
+  netSales: number;
+  ccTips: number;
+  houseCutPct: number;
+  houseCut: number;
+  payout: number;
+}
+
+export interface PoolMember {
+  employeeName: string;
+  hours?: number;
+  daysPresent?: number;
+  sharePct: number;
+  payout: number;
+}
+
+export interface Pool {
+  poolAmount: number;
+  totalHours?: number;
+  totalUnits?: number;
+  members: PoolMember[];
+}
+
+export interface CashoutResponse {
+  days: CashoutDay[];
+  weekly: Omit<CashoutDay, "businessDate">;
+  tipsPayout: {
+    fohServers: ServerPayout[];
+    barServers: ServerPayout[];
+    combinedServerNetSales: number;
+    houseTipPool: {
+      boh: Pool;
+      support: Pool;
+      bar: Pool;
+      leadership: Pool;
+    };
+  };
+}
+
+export async function fetchCashout(start: string, end: string): Promise<CashoutResponse> {
+  const res = await fetch(`/api/cashout?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`Cashout fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export interface LeadershipPresenceRow {
+  businessDate: string;
+  leaderName: string;
+  present: boolean;
+}
+
+export async function fetchLeadershipPresence(start: string, end: string): Promise<LeadershipPresenceRow[]> {
+  const res = await fetch(`/api/cashout/leadership-presence?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`Leadership presence fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function setLeadershipPresence(businessDate: string, leaderName: string, present: boolean): Promise<void> {
+  const res = await fetch(`/api/cashout/leadership-presence`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ businessDate, leaderName, present }),
+  });
+  if (!res.ok) throw new Error(`Set leadership presence failed: ${res.status}`);
+}
+
+export interface ServerTipsOverrideRow {
+  businessDate: string;
+  employeeGuid: string;
+  employeeName: string;
+  netSales: number | null;
+  ccTips: number | null;
+  note: string | null;
+}
+
+export async function fetchServerTipsOverrides(start: string, end: string): Promise<ServerTipsOverrideRow[]> {
+  const res = await fetch(`/api/cashout/server-tips-overrides?start=${start}&end=${end}`);
+  if (!res.ok) throw new Error(`Overrides fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function saveServerTipsOverride(input: {
+  businessDate: string;
+  employeeGuid: string;
+  employeeName: string;
+  netSales?: number | null;
+  ccTips?: number | null;
+  note?: string | null;
+}): Promise<void> {
+  const res = await fetch(`/api/cashout/server-tips-overrides`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`Save override failed: ${res.status}`);
+}
+
+export async function deleteServerTipsOverride(businessDate: string, employeeGuid: string): Promise<void> {
+  const res = await fetch(`/api/cashout/server-tips-overrides`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ businessDate, employeeGuid }),
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`Delete override failed: ${res.status}`);
+}
