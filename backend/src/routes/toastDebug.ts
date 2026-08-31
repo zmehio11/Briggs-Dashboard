@@ -171,3 +171,52 @@ toastDebugRouter.get("/employees-full", async (_req, res) => {
     }))
   );
 });
+
+// GET /api/toast-debug/server-day?businessDate=&employeeGuid= -- per-check
+// breakdown for one server on one day, to trace a net-sales discrepancy
+// down to the specific check(s) causing it.
+toastDebugRouter.get("/server-day", async (req, res) => {
+  const businessDate = String(req.query.businessDate ?? "");
+  const employeeGuid = String(req.query.employeeGuid ?? "");
+  const yyyymmdd = businessDate.replace(/-/g, "");
+
+  const { data: authData } = await axios.post(`${env.toast.baseUrl}/authentication/v1/authentication/login`, {
+    clientId: env.toast.clientId,
+    clientSecret: env.toast.clientSecret,
+    userAccessType: "TOAST_MACHINE_CLIENT",
+  });
+  const token = authData?.token?.accessToken;
+  const headers = { Authorization: `Bearer ${token}`, "Toast-Restaurant-External-ID": env.toast.restaurantGuid };
+
+  const orderGuids: string[] = [];
+  let page = 1;
+  while (true) {
+    const { data } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders`, {
+      headers,
+      params: { businessDate: yyyymmdd, page, pageSize: 100 },
+    });
+    const batch: string[] = Array.isArray(data) ? data : data?.orders ?? [];
+    orderGuids.push(...batch);
+    if (batch.length < 100) break;
+    page += 1;
+  }
+
+  const rows: any[] = [];
+  for (const guid of orderGuids) {
+    const { data: order } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders/${guid}`, { headers });
+    if (order.voided) continue;
+    for (const check of order.checks ?? []) {
+      if (check.voided || check.paymentStatus !== "CLOSED") continue;
+      const involvesEmployee =
+        check.openedBy?.guid === employeeGuid || (check.payments ?? []).some((p: any) => p.server?.guid === employeeGuid);
+      if (!involvesEmployee) continue;
+      rows.push({
+        checkGuid: check.guid,
+        checkAmount: check.amount,
+        openedBy: check.openedBy?.guid,
+        payments: (check.payments ?? []).map((p: any) => ({ serverGuid: p.server?.guid, amount: p.amount, tipAmount: p.tipAmount, type: p.type })),
+      });
+    }
+  }
+  res.json({ businessDate, employeeGuid, checkCount: rows.length, checks: rows });
+});
