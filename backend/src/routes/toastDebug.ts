@@ -220,3 +220,52 @@ toastDebugRouter.get("/server-day", async (req, res) => {
   }
   res.json({ businessDate, employeeGuid, checkCount: rows.length, checks: rows });
 });
+
+// GET /api/toast-debug/all-checks?businessDate= -- every closed check for
+// a day with its openedBy/payment servers, for manual inspection when a
+// specific employee's total doesn't reconcile.
+toastDebugRouter.get("/all-checks", async (req, res) => {
+  const businessDate = String(req.query.businessDate ?? "");
+  const yyyymmdd = businessDate.replace(/-/g, "");
+
+  const { data: authData } = await axios.post(`${env.toast.baseUrl}/authentication/v1/authentication/login`, {
+    clientId: env.toast.clientId,
+    clientSecret: env.toast.clientSecret,
+    userAccessType: "TOAST_MACHINE_CLIENT",
+  });
+  const token = authData?.token?.accessToken;
+  const headers = { Authorization: `Bearer ${token}`, "Toast-Restaurant-External-ID": env.toast.restaurantGuid };
+
+  const orderGuids: string[] = [];
+  let page = 1;
+  while (true) {
+    const { data } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders`, {
+      headers,
+      params: { businessDate: yyyymmdd, page, pageSize: 100 },
+    });
+    const batch: string[] = Array.isArray(data) ? data : data?.orders ?? [];
+    orderGuids.push(...batch);
+    if (batch.length < 100) break;
+    page += 1;
+  }
+
+  const rows: any[] = [];
+  let totalOrders = 0;
+  let voidedOrders = 0;
+  for (const guid of orderGuids) {
+    const { data: order } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders/${guid}`, { headers });
+    totalOrders += 1;
+    if (order.voided) { voidedOrders += 1; continue; }
+    for (const check of order.checks ?? []) {
+      rows.push({
+        checkGuid: check.guid,
+        checkAmount: check.amount,
+        voided: check.voided,
+        paymentStatus: check.paymentStatus,
+        openedBy: check.openedBy?.guid,
+        payments: (check.payments ?? []).map((p: any) => ({ serverGuid: p.server?.guid, amount: p.amount, type: p.type })),
+      });
+    }
+  }
+  res.json({ businessDate, totalOrders, voidedOrders, checkCount: rows.length, checks: rows });
+});
