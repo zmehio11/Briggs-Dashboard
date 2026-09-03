@@ -329,11 +329,30 @@ export function CashoutPage() {
             Week of {weekStart} – {weekEnd}
           </p>
         </div>
-        <nav className="period-toggle">
-          <button onClick={() => setWeekStart(addDays(weekStart, -7))}>← Prev week</button>
-          <button onClick={() => setWeekStart(toISODate(mondayOf(new Date())))}>This week</button>
-          <button onClick={() => setWeekStart(addDays(weekStart, 7))}>Next week →</button>
-        </nav>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <nav className="period-toggle">
+            <button onClick={() => setWeekStart(addDays(weekStart, -7))}>← Prev week</button>
+            <button onClick={() => setWeekStart(toISODate(mondayOf(new Date())))}>This week</button>
+            <button onClick={() => setWeekStart(addDays(weekStart, 7))}>Next week →</button>
+          </nav>
+          <a
+            href="/api/cashout/payout-export?periods=6"
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: 13,
+              fontWeight: 500,
+              color: "var(--brass)",
+              background: "var(--surface)",
+              border: "1px solid var(--hairline)",
+              borderRadius: 8,
+              padding: "10px 14px",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            ⬇ Download Payout Master
+          </a>
+        </div>
       </div>
 
       {error && <div className="banner banner-error">Couldn't load cashout data: {error}</div>}
