@@ -15,6 +15,7 @@ import { marginEdgeRouter } from "./routes/marginEdge.js";
 import { toastDebugRouter } from "./routes/toastDebug.js";
 import { pushDebugRouter } from "./routes/pushDebug.js";
 import { cashoutRouter } from "./routes/cashout.js";
+import { payoutExportRouter } from "./routes/payoutExport.js";
 import { syncNowRouter } from "./routes/syncNow.js";
 import { expensesRouter } from "./routes/expenses.js";
 import { syncYesterday } from "./jobs/syncDaily.js";
@@ -38,6 +39,7 @@ app.use("/api/margin-edge", marginEdgeRouter);
 app.use("/api/toast-debug", toastDebugRouter);
 app.use("/api/push-debug", pushDebugRouter);
 app.use("/api/cashout", cashoutRouter);
+app.use("/api/cashout", payoutExportRouter);
 app.use("/api/sync-now", syncNowRouter);
 app.use("/api/expenses", expensesRouter);
 

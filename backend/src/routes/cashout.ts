@@ -14,21 +14,14 @@ function round2(n: number): number {
 }
 
 /**
- * GET /api/cashout?start=YYYY-MM-DD&end=YYYY-MM-DD
- *
- * Replicates the "Daily Sales & Cash Report" / "Weekly Summary" /
- * "Tips Payout" sheets for the given range (intended to be one week,
- * matching the source spreadsheets, but not enforced). Everything here is
- * computed at read time from DailyCashout / DailyServerTips /
- * DailyEmployeeTipHours / DailyLeadershipPresence -- nothing is
- * pre-aggregated, so it always reflects the latest synced data.
+ * Everything under "Tips Payout" for [start, end]: individual FOH/Bar
+ * server payouts and the 4 house-tip-pool breakdowns. Shared by the main
+ * GET / route (one week or an arbitrary range) and the payout-export
+ * endpoint (called once per week within a pay period, so each person's
+ * two weekly figures land in the right columns before summing).
  */
-cashoutRouter.get("/", async (req, res) => {
-  const start = req.query.start ? new Date(String(req.query.start)) : new Date("2000-01-01");
-  const end = req.query.end ? new Date(String(req.query.end)) : new Date();
-
-  const [dailyRows, serverTips, employeeHours, leadershipPresence, overrides] = await Promise.all([
-    prisma.dailyCashout.findMany({ where: { businessDate: { gte: start, lte: end } }, orderBy: { businessDate: "asc" } }),
+export async function computeTipsPayout(start: Date, end: Date) {
+  const [serverTips, employeeHours, leadershipPresence, overrides] = await Promise.all([
     prisma.dailyServerTips.findMany({ where: { businessDate: { gte: start, lte: end } } }),
     prisma.dailyEmployeeTipHours.findMany({ where: { businessDate: { gte: start, lte: end } } }),
     prisma.dailyLeadershipPresence.findMany({ where: { businessDate: { gte: start, lte: end } } }),
@@ -69,49 +62,6 @@ cashoutRouter.get("/", async (req, res) => {
       houseCutPct: 0.085,
     } as any);
   }
-
-  // --- Daily + weekly cashout totals ---
-  const days = dailyRows.map((r) => ({
-    businessDate: r.businessDate.toISOString().slice(0, 10),
-    foodSales: Number(r.foodSales),
-    liquorSales: Number(r.liquorSales),
-    wineSales: Number(r.wineSales),
-    beerSales: Number(r.beerSales),
-    naBevSales: Number(r.naBevSales),
-    otherSales: Number(r.otherSales),
-    totalSales: round2(
-      Number(r.foodSales) + Number(r.liquorSales) + Number(r.wineSales) + Number(r.beerSales) + Number(r.naBevSales) + Number(r.otherSales)
-    ),
-    discounts: Number(r.discounts),
-    voids: Number(r.voids),
-    gst: Number(r.gst),
-    ccTipsTotal: Number(r.ccTipsTotal),
-    cashPayments: Number(r.cashPayments),
-    cardPayments: Number(r.cardPayments),
-    otherPayments: Number(r.otherPayments),
-    covers: r.covers,
-  }));
-
-  const weekly = days.reduce(
-    (acc, d) => ({
-      foodSales: acc.foodSales + d.foodSales,
-      liquorSales: acc.liquorSales + d.liquorSales,
-      wineSales: acc.wineSales + d.wineSales,
-      beerSales: acc.beerSales + d.beerSales,
-      naBevSales: acc.naBevSales + d.naBevSales,
-      otherSales: acc.otherSales + d.otherSales,
-      totalSales: acc.totalSales + d.totalSales,
-      discounts: acc.discounts + d.discounts,
-      voids: acc.voids + d.voids,
-      gst: acc.gst + d.gst,
-      ccTipsTotal: acc.ccTipsTotal + d.ccTipsTotal,
-      cashPayments: acc.cashPayments + d.cashPayments,
-      cardPayments: acc.cardPayments + d.cardPayments,
-      otherPayments: acc.otherPayments + d.otherPayments,
-      covers: acc.covers + d.covers,
-    }),
-    { foodSales: 0, liquorSales: 0, wineSales: 0, beerSales: 0, naBevSales: 0, otherSales: 0, totalSales: 0, discounts: 0, voids: 0, gst: 0, ccTipsTotal: 0, cashPayments: 0, cardPayments: 0, otherPayments: 0, covers: 0 }
-  );
 
   // --- Tips payout: FOH + Bar servers (individual net-sales-based) ---
   const serverTotals = new Map<string, { employeeGuid: string; employeeName: string; role: string; netSales: number; ccTips: number; houseCutPct: number }>();
@@ -190,20 +140,84 @@ cashoutRouter.get("/", async (req, res) => {
     };
   }).sort((a, b) => b.payout - a.payout);
 
+  return {
+    fohServers: fohServers.sort((a, b) => b.payout - a.payout),
+    barServers: barServers.sort((a, b) => b.payout - a.payout),
+    combinedServerNetSales,
+    houseTipPool: {
+      boh: buildPool("BOH", bohPoolAmount),
+      support: buildPool("Support", supportPoolAmount),
+      bar: buildPool("Bar", barPoolAmount),
+      leadership: { poolAmount: leadershipPoolAmount, totalUnits: totalLeadershipUnits, members: leadershipMembers },
+    },
+  };
+}
+
+/**
+ * GET /api/cashout?start=YYYY-MM-DD&end=YYYY-MM-DD
+ *
+ * Replicates the "Daily Sales & Cash Report" / "Weekly Summary" /
+ * "Tips Payout" sheets for the given range (intended to be one week,
+ * matching the source spreadsheets, but not enforced). Everything here is
+ * computed at read time from DailyCashout / DailyServerTips /
+ * DailyEmployeeTipHours / DailyLeadershipPresence -- nothing is
+ * pre-aggregated, so it always reflects the latest synced data.
+ */
+cashoutRouter.get("/", async (req, res) => {
+  const start = req.query.start ? new Date(String(req.query.start)) : new Date("2000-01-01");
+  const end = req.query.end ? new Date(String(req.query.end)) : new Date();
+
+  const [dailyRows, tipsPayout] = await Promise.all([
+    prisma.dailyCashout.findMany({ where: { businessDate: { gte: start, lte: end } }, orderBy: { businessDate: "asc" } }),
+    computeTipsPayout(start, end),
+  ]);
+
+  const days = dailyRows.map((r) => ({
+    businessDate: r.businessDate.toISOString().slice(0, 10),
+    foodSales: Number(r.foodSales),
+    liquorSales: Number(r.liquorSales),
+    wineSales: Number(r.wineSales),
+    beerSales: Number(r.beerSales),
+    naBevSales: Number(r.naBevSales),
+    otherSales: Number(r.otherSales),
+    totalSales: round2(
+      Number(r.foodSales) + Number(r.liquorSales) + Number(r.wineSales) + Number(r.beerSales) + Number(r.naBevSales) + Number(r.otherSales)
+    ),
+    discounts: Number(r.discounts),
+    voids: Number(r.voids),
+    gst: Number(r.gst),
+    ccTipsTotal: Number(r.ccTipsTotal),
+    cashPayments: Number(r.cashPayments),
+    cardPayments: Number(r.cardPayments),
+    otherPayments: Number(r.otherPayments),
+    covers: r.covers,
+  }));
+
+  const weekly = days.reduce(
+    (acc, d) => ({
+      foodSales: acc.foodSales + d.foodSales,
+      liquorSales: acc.liquorSales + d.liquorSales,
+      wineSales: acc.wineSales + d.wineSales,
+      beerSales: acc.beerSales + d.beerSales,
+      naBevSales: acc.naBevSales + d.naBevSales,
+      otherSales: acc.otherSales + d.otherSales,
+      totalSales: acc.totalSales + d.totalSales,
+      discounts: acc.discounts + d.discounts,
+      voids: acc.voids + d.voids,
+      gst: acc.gst + d.gst,
+      ccTipsTotal: acc.ccTipsTotal + d.ccTipsTotal,
+      cashPayments: acc.cashPayments + d.cashPayments,
+      cardPayments: acc.cardPayments + d.cardPayments,
+      otherPayments: acc.otherPayments + d.otherPayments,
+      covers: acc.covers + d.covers,
+    }),
+    { foodSales: 0, liquorSales: 0, wineSales: 0, beerSales: 0, naBevSales: 0, otherSales: 0, totalSales: 0, discounts: 0, voids: 0, gst: 0, ccTipsTotal: 0, cashPayments: 0, cardPayments: 0, otherPayments: 0, covers: 0 }
+  );
+
   res.json({
     days,
     weekly: { ...weekly, foodSales: round2(weekly.foodSales), liquorSales: round2(weekly.liquorSales), wineSales: round2(weekly.wineSales), beerSales: round2(weekly.beerSales), naBevSales: round2(weekly.naBevSales), otherSales: round2(weekly.otherSales), totalSales: round2(weekly.totalSales), discounts: round2(weekly.discounts), voids: round2(weekly.voids), gst: round2(weekly.gst), ccTipsTotal: round2(weekly.ccTipsTotal), cashPayments: round2(weekly.cashPayments), cardPayments: round2(weekly.cardPayments), otherPayments: round2(weekly.otherPayments) },
-    tipsPayout: {
-      fohServers: fohServers.sort((a, b) => b.payout - a.payout),
-      barServers: barServers.sort((a, b) => b.payout - a.payout),
-      combinedServerNetSales,
-      houseTipPool: {
-        boh: buildPool("BOH", bohPoolAmount),
-        support: buildPool("Support", supportPoolAmount),
-        bar: buildPool("Bar", barPoolAmount),
-        leadership: { poolAmount: leadershipPoolAmount, totalUnits: totalLeadershipUnits, members: leadershipMembers },
-      },
-    },
+    tipsPayout,
   });
 });
 
