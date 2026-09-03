@@ -7,7 +7,7 @@ const BOH_POOL_PCT = 0.035;
 const SUPPORT_POOL_PCT = 0.015;
 const BAR_POOL_PCT = 0.015;
 const LEADERSHIP_POOL_PCT = 0.02;
-const LEADERSHIP_ROSTER = ["Ayoub Sarhrif", "Bo Tkachenko", "Jenn"];
+export const LEADERSHIP_ROSTER = ["Ayoub Sarhrif", "Bo Tkachenko", "Jenn"];
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;

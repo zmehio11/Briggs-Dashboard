@@ -1,6 +1,7 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
-import { computeTipsPayout } from "./cashout.js";
+import { prisma } from "../lib/prisma.js";
+import { computeTipsPayout, LEADERSHIP_ROSTER } from "./cashout.js";
 
 export const payoutExportRouter = Router();
 
@@ -85,6 +86,15 @@ payoutExportRouter.get("/payout-export", async (req, res) => {
   const firstIndex = Math.max(1, throughPeriodIndex - periodsCount + 1);
   const periods = Array.from({ length: throughPeriodIndex - firstIndex + 1 }, (_, i) => periodAt(firstIndex + i));
 
+  // The Leadership pool (Ayoub Sarhrif / Bo Tkachenko / Jenn) relies on a
+  // manual daily presence toggle -- it wasn't used at all until whenever
+  // someone first recorded a day, so periods entirely before that date have
+  // no real presence data and understate (often to $0) those three names'
+  // payout. Rather than fabricate historical presence, we flag it: find the
+  // earliest recorded date and mark any period that starts before it.
+  const earliestPresence = await prisma.dailyLeadershipPresence.findFirst({ orderBy: { businessDate: "asc" } });
+  const leadershipTrackingStart = earliestPresence?.businessDate ?? null;
+
   // One pass of two computeTipsPayout calls per period (14 total API-free
   // DB reads for 7 periods) -- fetched in parallel, then merged per name.
   const periodTotals = await Promise.all(
@@ -110,6 +120,13 @@ payoutExportRouter.get("/payout-export", async (req, res) => {
   sheet.getCell("A1").value = "Briggs Tip Payout Master";
   sheet.getCell("A1").font = { name: "Arial", size: 14, bold: true };
 
+  if (leadershipTrackingStart && periods.some((p) => p.week1Start < leadershipTrackingStart)) {
+    sheet.getCell("A2").value =
+      `Note: Leadership pool tracking (Ayoub Sarhrif, Bo Tkachenko, Jenn) began ${isoDate(leadershipTrackingStart)}. ` +
+      `Highlighted cells for these three names are from before tracking started and may understate their actual payout.`;
+    sheet.getCell("A2").font = { name: "Arial", size: 9, italic: true, color: { argb: "FF806000" } };
+  }
+
   const headerRow = 3;
   const dataStartRow = 4;
   let col = 2; // column B -- column A is Name
@@ -128,11 +145,14 @@ payoutExportRouter.get("/payout-export", async (req, res) => {
   sheet.getRow(headerRow).font = { name: "Arial", bold: true };
   sheet.getRow(headerRow).alignment = { horizontal: "center" };
 
+  const flagFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
+  const isLeadershipName = (name: string) => LEADERSHIP_ROSTER.includes(name);
+
   names.forEach((name, i) => {
     const row = dataStartRow + i;
     sheet.getCell(row, 1).value = name;
     sheet.getCell(row, 1).font = { name: "Arial" };
-    periodTotals.forEach(({ week1, week2 }, periodIdx) => {
+    periodTotals.forEach(({ period, week1, week2 }, periodIdx) => {
       const { week1Col, week2Col, totalCol } = periodColumns[periodIdx];
       const w1 = round2(week1.get(name) ?? 0);
       const w2 = round2(week2.get(name) ?? 0);
@@ -142,6 +162,22 @@ payoutExportRouter.get("/payout-export", async (req, res) => {
       for (const c of [week1Col, week2Col, totalCol]) {
         sheet.getCell(row, c).numFmt = "$#,##0.00;($#,##0.00);-";
         sheet.getCell(row, c).font = { name: "Arial" };
+      }
+
+      if (isLeadershipName(name) && leadershipTrackingStart) {
+        const week1Untracked = period.week1Start < leadershipTrackingStart;
+        const week2Untracked = period.week2Start < leadershipTrackingStart;
+        if (week1Untracked) {
+          sheet.getCell(row, week1Col).fill = flagFill;
+          sheet.getCell(row, week1Col).note = "Leadership presence wasn't tracked yet for this week -- figure may be incomplete.";
+        }
+        if (week2Untracked) {
+          sheet.getCell(row, week2Col).fill = flagFill;
+          sheet.getCell(row, week2Col).note = "Leadership presence wasn't tracked yet for this week -- figure may be incomplete.";
+        }
+        if (week1Untracked || week2Untracked) {
+          sheet.getCell(row, totalCol).fill = flagFill;
+        }
       }
     });
   });
