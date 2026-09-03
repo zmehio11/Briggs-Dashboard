@@ -87,13 +87,29 @@ payoutExportRouter.get("/payout-export", async (req, res) => {
   const periods = Array.from({ length: throughPeriodIndex - firstIndex + 1 }, (_, i) => periodAt(firstIndex + i));
 
   // The Leadership pool (Ayoub Sarhrif / Bo Tkachenko / Jenn) relies on a
-  // manual daily presence toggle -- it wasn't used at all until whenever
-  // someone first recorded a day, so periods entirely before that date have
-  // no real presence data and understate (often to $0) those three names'
-  // payout. Rather than fabricate historical presence, we flag it: find the
-  // earliest recorded date and mark any period that starts before it.
-  const earliestPresence = await prisma.dailyLeadershipPresence.findFirst({ orderBy: { businessDate: "asc" } });
-  const leadershipTrackingStart = earliestPresence?.businessDate ?? null;
+  // manual daily presence toggle. It's been used sporadically -- some weeks
+  // have zero recorded days, which understate (often to $0) those three
+  // names' payout for that week. A single "tracking started on date X" cutoff
+  // is misleading here: one stray early toggle would make a genuinely-blank
+  // later week look "after tracking started" and go unflagged. So instead we
+  // check per week whether ANY presence row exists in it at all.
+  const exportRangeStart = periods[0]?.week1Start;
+  const exportRangeEnd = periods[periods.length - 1]?.week2End;
+  const presenceRows =
+    exportRangeStart && exportRangeEnd
+      ? await prisma.dailyLeadershipPresence.findMany({
+          where: { businessDate: { gte: exportRangeStart, lte: exportRangeEnd } },
+          select: { businessDate: true },
+        })
+      : [];
+  const presenceDates = new Set(presenceRows.map((r) => isoDate(r.businessDate)));
+
+  function weekHasPresenceData(start: Date, end: Date): boolean {
+    for (let d = new Date(start); d <= end; d = addDays(d, 1)) {
+      if (presenceDates.has(isoDate(d))) return true;
+    }
+    return false;
+  }
 
   // One pass of two computeTipsPayout calls per period (14 total API-free
   // DB reads for 7 periods) -- fetched in parallel, then merged per name.
@@ -120,10 +136,13 @@ payoutExportRouter.get("/payout-export", async (req, res) => {
   sheet.getCell("A1").value = "Briggs Tip Payout Master";
   sheet.getCell("A1").font = { name: "Arial", size: 14, bold: true };
 
-  if (leadershipTrackingStart && periods.some((p) => p.week1Start < leadershipTrackingStart)) {
+  const anyWeekMissingPresence = periods.some(
+    (p) => !weekHasPresenceData(p.week1Start, p.week1End) || !weekHasPresenceData(p.week2Start, p.week2End)
+  );
+  if (anyWeekMissingPresence) {
     sheet.getCell("A2").value =
-      `Note: Leadership pool tracking (Ayoub Sarhrif, Bo Tkachenko, Jenn) began ${isoDate(leadershipTrackingStart)}. ` +
-      `Highlighted cells for these three names are from before tracking started and may understate their actual payout.`;
+      `Note: highlighted cells for Ayoub Sarhrif, Bo Tkachenko, and Jenn are weeks with no recorded Leadership ` +
+      `Presence toggle data -- their Leadership-pool share for that week is likely understated (often $0).`;
     sheet.getCell("A2").font = { name: "Arial", size: 9, italic: true, color: { argb: "FF806000" } };
   }
 
@@ -164,18 +183,18 @@ payoutExportRouter.get("/payout-export", async (req, res) => {
         sheet.getCell(row, c).font = { name: "Arial" };
       }
 
-      if (isLeadershipName(name) && leadershipTrackingStart) {
-        const week1Untracked = period.week1Start < leadershipTrackingStart;
-        const week2Untracked = period.week2Start < leadershipTrackingStart;
-        if (week1Untracked) {
+      if (isLeadershipName(name)) {
+        const week1Missing = !weekHasPresenceData(period.week1Start, period.week1End);
+        const week2Missing = !weekHasPresenceData(period.week2Start, period.week2End);
+        if (week1Missing) {
           sheet.getCell(row, week1Col).fill = flagFill;
-          sheet.getCell(row, week1Col).note = "Leadership presence wasn't tracked yet for this week -- figure may be incomplete.";
+          sheet.getCell(row, week1Col).note = "No Leadership Presence toggle data recorded for this week -- figure is likely understated.";
         }
-        if (week2Untracked) {
+        if (week2Missing) {
           sheet.getCell(row, week2Col).fill = flagFill;
-          sheet.getCell(row, week2Col).note = "Leadership presence wasn't tracked yet for this week -- figure may be incomplete.";
+          sheet.getCell(row, week2Col).note = "No Leadership Presence toggle data recorded for this week -- figure is likely understated.";
         }
-        if (week1Untracked || week2Untracked) {
+        if (week1Missing || week2Missing) {
           sheet.getCell(row, totalCol).fill = flagFill;
         }
       }
