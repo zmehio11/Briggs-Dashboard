@@ -1,13 +1,10 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { fetchSalesByHour, SalesByHourCell } from "../lib/api";
 
 // Mon..Sun display order (API's dayOfWeek is 0=Sun..6=Sat, JS's own getUTCDay()).
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const WEEKEND_DAYS = new Set([0, 6]); // Sun, Sat -- default brunch days, adjustable per-day below
-const HEATMAP_START_HOUR = 10; // 10 AM
-const HEATMAP_END_HOUR = 23; // 11 PM-midnight slot -- the heatmap's focus window
 
 type Metric = "avgNetSales" | "avgOrderCount" | "avgCovers";
 const METRICS: { key: Metric; label: string; format: (n: number) => string }[] = [
@@ -16,26 +13,62 @@ const METRICS: { key: Metric; label: string; format: (n: number) => string }[] =
   { key: "avgCovers", label: "Covers", format: (n) => n.toFixed(1) },
 ];
 
-function formatClock(hour: number): string {
-  const h = ((hour % 24) + 24) % 24;
-  const period = h < 12 ? "AM" : "PM";
-  const display = h % 12 === 0 ? 12 : h % 12;
-  return `${display}:00 ${period}`;
+interface Period {
+  name: string;
+  startHour: number; // may be a half hour, e.g. 11.5
+  endHour: number; // always whole, exclusive (24 = midnight)
+}
+
+// Fixed service schedule, as given -- not inferred from data. Half-hour
+// starts (11:30 AM) round down to the containing hour bucket for data
+// purposes (our hourly sales data has no finer resolution), while the
+// displayed time still shows the real :30 start.
+const SCHEDULE: Record<number, Period[]> = {
+  1: [{ name: "Brunch", startHour: 11.5, endHour: 14 }, { name: "Lunch", startHour: 14, endHour: 17 }, { name: "Dinner", startHour: 17, endHour: 22 }],
+  2: [{ name: "Brunch", startHour: 11.5, endHour: 14 }, { name: "Lunch", startHour: 14, endHour: 17 }, { name: "Dinner", startHour: 17, endHour: 22 }],
+  3: [{ name: "Brunch", startHour: 11.5, endHour: 14 }, { name: "Lunch", startHour: 14, endHour: 17 }, { name: "Dinner", startHour: 17, endHour: 22 }],
+  4: [{ name: "Brunch", startHour: 11.5, endHour: 14 }, { name: "Lunch", startHour: 14, endHour: 17 }, { name: "Dinner", startHour: 17, endHour: 22 }],
+  5: [{ name: "Brunch", startHour: 11.5, endHour: 14 }, { name: "Lunch", startHour: 14, endHour: 17 }, { name: "Dinner", startHour: 17, endHour: 24 }],
+  6: [{ name: "Brunch", startHour: 10, endHour: 14 }, { name: "Lunch", startHour: 14, endHour: 17 }, { name: "Dinner", startHour: 17, endHour: 24 }],
+  0: [{ name: "Brunch", startHour: 10, endHour: 14 }, { name: "Lunch", startHour: 14, endHour: 17 }, { name: "Dinner", startHour: 17, endHour: 22 }],
+};
+
+// Same fixed 3-hue order already used elsewhere in this app (LaborPage's
+// FOH/BOH/Management bars) -- reused here as a period legend, not mixed
+// with that chart.
+const PERIOD_COLORS: Record<string, string> = { Brunch: "#C9A15A", Lunch: "#8FA37A", Dinner: "#C4664A" };
+
+function formatTime(h: number): string {
+  const whole = Math.floor(h);
+  const isHalf = h - whole === 0.5;
+  const hh = ((whole % 24) + 24) % 24;
+  const period = hh < 12 ? "AM" : "PM";
+  const display = hh % 12 === 0 ? 12 : hh % 12;
+  return `${display}:${isHalf ? "30" : "00"} ${period}`;
+}
+
+function periodHours(period: Period): number[] {
+  const start = Math.floor(period.startHour);
+  return Array.from({ length: period.endHour - start }, (_, i) => start + i);
+}
+
+function buildHourArray(cells: SalesByHourCell[], metric: Metric): { hour: number; value: number }[] {
+  const map = new Map<number, number>();
+  for (const c of cells) map.set(c.hour, c[metric]);
+  return Array.from({ length: 24 }, (_, hour) => ({ hour, value: map.get(hour) ?? 0 }));
 }
 
 interface Window {
   openHour: number;
-  closeHour: number; // exclusive -- end of the last active hour
+  closeHour: number; // exclusive
   capturedPct: number;
-  totalValue: number;
 }
 
 /**
  * Trims the lowest-value edge hour (never an interior hour -- you can't skip
  * a slow middle hour and reopen after) one at a time, stopping once the next
- * trim would drop captured value below thresholdPct of the period's total.
- * Returns null when the period has no real activity at all (e.g. brunch,
- * which hasn't run yet, or a period a given day just doesn't operate in).
+ * trim would drop captured value below thresholdPct of the window's total.
+ * Returns null when there's no real activity in this hour range at all.
  */
 function suggestWindow(hourValues: { hour: number; value: number }[], thresholdPct: number): Window | null {
   const total = hourValues.reduce((s, h) => s + h.value, 0);
@@ -54,7 +87,7 @@ function suggestWindow(hourValues: { hour: number; value: number }[], thresholdP
     const dropLeftSide = dropLeft <= dropRight;
     const dropValue = dropLeftSide ? dropLeft : dropRight;
     const newCaptured = captured - dropValue;
-    if (total > 0 && newCaptured / total >= thresholdPct / 100) {
+    if (newCaptured / total >= thresholdPct / 100) {
       captured = newCaptured;
       if (dropLeftSide) lo++;
       else hi--;
@@ -62,7 +95,56 @@ function suggestWindow(hourValues: { hour: number; value: number }[], thresholdP
       break;
     }
   }
-  return { openHour: hourValues[lo].hour, closeHour: hourValues[hi].hour + 1, capturedPct: (captured / total) * 100, totalValue: total };
+  return { openHour: hourValues[lo].hour, closeHour: hourValues[hi].hour + 1, capturedPct: (captured / total) * 100 };
+}
+
+function PeriodCard({
+  period,
+  hourValues,
+  dayTotal,
+  threshold,
+  metricFormat,
+}: {
+  period: Period;
+  hourValues: { hour: number; value: number }[];
+  dayTotal: number;
+  threshold: number;
+  metricFormat: (n: number) => string;
+}) {
+  const rangeHours = periodHours(period);
+  const rangeValues = hourValues.filter((h) => rangeHours.includes(h.hour));
+  const periodTotal = rangeValues.reduce((s, h) => s + h.value, 0);
+  const sharePct = dayTotal > 0 ? (periodTotal / dayTotal) * 100 : 0;
+  const suggested = suggestWindow(rangeValues, threshold);
+
+  const scheduledStart = Math.floor(period.startHour);
+  const matchesSchedule = suggested && suggested.openHour === scheduledStart && suggested.closeHour === period.endHour;
+
+  return (
+    <div style={{ background: "var(--surface-2)", borderRadius: 8, padding: 14, borderTop: `3px solid ${PERIOD_COLORS[period.name]}` }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>{period.name}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 600 }}>
+        {formatTime(period.startHour)} – {formatTime(period.endHour)}
+      </div>
+      {periodTotal > 0 ? (
+        <>
+          <div className="subtext" style={{ marginTop: 4 }}>
+            avg {metricFormat(periodTotal)} -- {sharePct.toFixed(0)}% of the day
+          </div>
+          {suggested && !matchesSchedule && (
+            <div className="subtext" style={{ marginTop: 8, fontStyle: "italic" }}>
+              Data suggests {formatTime(suggested.openHour)} – {formatTime(suggested.closeHour)} would still capture{" "}
+              {suggested.capturedPct.toFixed(0)}% of this period's sales.
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="subtext" style={{ marginTop: 4 }}>
+          No historical data in this window yet.
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DayPanel({
@@ -71,33 +153,18 @@ function DayPanel({
   sampleSize,
   metric,
   metricFormat,
-  splitHour,
-  onSplitHourChange,
   threshold,
-  isBrunchDay,
-  onToggleBrunch,
 }: {
   dayOfWeek: number;
   cells: SalesByHourCell[];
   sampleSize: number;
   metric: Metric;
   metricFormat: (n: number) => string;
-  splitHour: number;
-  onSplitHourChange: (h: number) => void;
   threshold: number;
-  isBrunchDay: boolean;
-  onToggleBrunch: () => void;
 }) {
-  const byHour = useMemo(() => {
-    const map = new Map<number, number>();
-    for (const c of cells) map.set(c.hour, c[metric]);
-    return Array.from({ length: 24 }, (_, hour) => ({ hour, value: map.get(hour) ?? 0 }));
-  }, [cells, metric]);
-
-  const firstPeriod = byHour.filter((h) => h.hour < splitHour);
-  const secondPeriod = byHour.filter((h) => h.hour >= splitHour);
-  const firstWindow = suggestWindow(firstPeriod, threshold);
-  const secondWindow = suggestWindow(secondPeriod, threshold);
+  const hourValues = useMemo(() => buildHourArray(cells, metric), [cells, metric]);
+  const dayTotal = hourValues.reduce((s, h) => s + h.value, 0);
+  const periods = SCHEDULE[dayOfWeek];
 
   return (
     <section className="table-card">
@@ -108,141 +175,63 @@ function DayPanel({
           {sampleSize === 1 ? "" : "s"}
         </span>
       </div>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", margin: "8px 0 12px", flexWrap: "wrap" }}>
-        <label className="subtext" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          Split hour:
-          <select value={splitHour} onChange={(e) => onSplitHourChange(Number(e.target.value))}>
-            {Array.from({ length: 24 }, (_, h) => (
-              <option key={h} value={h}>
-                {formatClock(h)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="subtext" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input type="checkbox" checked={isBrunchDay} onChange={onToggleBrunch} />
-          Brunch day
-        </label>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-        <WindowCard
-          title={isBrunchDay ? "Brunch + Lunch" : "Lunch"}
-          window={firstWindow}
-          metricFormat={metricFormat}
-          note={
-            isBrunchDay
-              ? "Brunch is new -- this reflects existing lunch-hours data only. Once brunch service runs and syncs, its hours feed into this suggestion automatically."
-              : undefined
-          }
-        />
-        <WindowCard title="Dinner" window={secondWindow} metricFormat={metricFormat} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginTop: 12 }}>
+        {periods.map((p) => (
+          <PeriodCard key={p.name} period={p} hourValues={hourValues} dayTotal={dayTotal} threshold={threshold} metricFormat={metricFormat} />
+        ))}
       </div>
     </section>
   );
 }
 
-function WindowCard({
-  title,
-  window,
-  metricFormat,
-  note,
+function DayChart({
+  dayOfWeek,
+  cells,
+  metric,
+  metricLabel,
 }: {
-  title: string;
-  window: Window | null;
-  metricFormat: (n: number) => string;
-  note?: string;
+  dayOfWeek: number;
+  cells: SalesByHourCell[];
+  metric: Metric;
+  metricLabel: string;
 }) {
+  const periods = SCHEDULE[dayOfWeek];
+  const rangeStart = Math.floor(periods[0].startHour);
+  const rangeEnd = periods[periods.length - 1].endHour;
+  const hourValues = useMemo(() => buildHourArray(cells, metric), [cells, metric]);
+  const chartData = hourValues.filter((h) => h.hour >= rangeStart && h.hour < rangeEnd);
+  const ticks = chartData.map((h) => h.hour).filter((h) => h % 2 === 0);
+
   return (
-    <div style={{ background: "var(--surface-2)", borderRadius: 8, padding: 14 }}>
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>{title}</div>
-      {window ? (
-        <>
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 600 }}>
-            {formatClock(window.openHour)} – {formatClock(window.closeHour)}
-          </div>
-          <div className="subtext" style={{ marginTop: 4 }}>
-            captures {window.capturedPct.toFixed(0)}% of {metricFormat(window.totalValue)} total
-          </div>
-        </>
-      ) : (
-        <div className="subtext">Not enough data yet.</div>
-      )}
-      {note && (
-        <div className="subtext" style={{ marginTop: 8, fontStyle: "italic" }}>
-          {note}
-        </div>
-      )}
+    <div className="table-card">
+      <h2 style={{ fontSize: 15 }}>{DAY_NAMES[dayOfWeek]}</h2>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+          <CartesianGrid stroke="var(--hairline)" strokeDasharray="2 4" vertical={false} />
+          {periods.map((p) => (
+            <ReferenceArea key={p.name} x1={p.startHour} x2={p.endHour} fill={PERIOD_COLORS[p.name]} fillOpacity={0.12} stroke="none" />
+          ))}
+          <XAxis
+            dataKey="hour"
+            type="number"
+            domain={[rangeStart, rangeEnd]}
+            ticks={ticks}
+            tickFormatter={(h) => formatTime(h).replace(":00 ", "")}
+            stroke="var(--text-muted)"
+            fontSize={10}
+            tickLine={false}
+          />
+          <YAxis stroke="var(--text-muted)" fontSize={10} tickLine={false} width={36} />
+          <Tooltip
+            contentStyle={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 8 }}
+            labelStyle={{ color: "var(--text)" }}
+            formatter={(value: number) => [value.toFixed(metric === "avgNetSales" ? 0 : 1), metricLabel]}
+            labelFormatter={(h: number) => formatTime(h)}
+          />
+          <Bar dataKey="value" fill="#C9A15A" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
-  );
-}
-
-function Heatmap({ cells, metric, metricFormat }: { cells: SalesByHourCell[]; metric: Metric; metricFormat: (n: number) => string }) {
-  const byKey = useMemo(() => {
-    const map = new Map<string, SalesByHourCell>();
-    for (const c of cells) map.set(`${c.dayOfWeek}-${c.hour}`, c);
-    return map;
-  }, [cells]);
-
-  const { hours, maxValue } = useMemo(() => {
-    const lo = HEATMAP_START_HOUR;
-    const hi = HEATMAP_END_HOUR;
-    let max = 0;
-    for (const c of cells) {
-      if (c.hour >= lo && c.hour <= hi) max = Math.max(max, c[metric]);
-    }
-    return { hours: Array.from({ length: hi - lo + 1 }, (_, i) => lo + i), maxValue: max };
-  }, [cells, metric]);
-
-  const [hoverKey, setHoverKey] = useState<string | null>(null);
-
-  function cellColor(value: number): string {
-    if (maxValue <= 0) return "transparent";
-    const t = Math.sqrt(Math.max(0, value) / maxValue);
-    const opacity = 0.06 + 0.82 * t;
-    return `rgba(201, 161, 90, ${opacity.toFixed(3)})`;
-  }
-
-  return (
-    <section className="table-card">
-      <h2>Hourly Heatmap</h2>
-      <div className="table-scroll">
-        <div style={{ display: "grid", gridTemplateColumns: `70px repeat(${hours.length}, 40px)`, gap: 2 }}>
-          <div />
-          {hours.map((h) => (
-            <div key={h} className="subtext" style={{ textAlign: "center", fontSize: 10 }}>
-              {h % 3 === 0 ? formatClock(h).replace(":00 ", "") : ""}
-            </div>
-          ))}
-          {DAY_ORDER.map((dow) => (
-            <Fragment key={dow}>
-              <div className="subtext" style={{ display: "flex", alignItems: "center", fontWeight: 600 }}>
-                {DAY_ABBR[dow]}
-              </div>
-              {hours.map((h) => {
-                const cell = byKey.get(`${dow}-${h}`);
-                const value = cell ? cell[metric] : 0;
-                const key = `${dow}-${h}`;
-                return (
-                  <div
-                    key={key}
-                    onMouseEnter={() => setHoverKey(key)}
-                    onMouseLeave={() => setHoverKey((k) => (k === key ? null : k))}
-                    title={`${DAY_NAMES[dow]} ${formatClock(h)}: ${metricFormat(value)}`}
-                    style={{
-                      height: 28,
-                      borderRadius: 3,
-                      background: cellColor(value),
-                      border: hoverKey === key ? "1px solid var(--brass)" : "1px solid transparent",
-                      cursor: "default",
-                    }}
-                  />
-                );
-              })}
-            </Fragment>
-          ))}
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -252,8 +241,6 @@ export function SalesByHourPage() {
   const [error, setError] = useState<string | null>(null);
   const [metric, setMetric] = useState<Metric>("avgNetSales");
   const [threshold, setThreshold] = useState(90);
-  const [splitHourByDay, setSplitHourByDay] = useState<Record<number, number>>({});
-  const [brunchDays, setBrunchDays] = useState<Set<number>>(new Set(WEEKEND_DAYS));
 
   useEffect(() => {
     setLoading(true);
@@ -280,7 +267,7 @@ export function SalesByHourPage() {
       <div style={{ marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Sales by Hour</h1>
         <p className="subtext" style={{ margin: "4px 0 0" }}>
-          Based on all synced history. Adjust the controls below to tune the suggestions -- nothing here is fixed.
+          Based on all synced history, against the current Brunch / Lunch / Dinner schedule.
         </p>
       </div>
 
@@ -316,10 +303,24 @@ export function SalesByHourPage() {
                   style={{ width: 140 }}
                 />
               </label>
+              <div style={{ display: "flex", gap: 14, alignItems: "center", marginLeft: "auto" }}>
+                {Object.entries(PERIOD_COLORS).map(([name, color]) => (
+                  <span key={name} className="subtext" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block" }} />
+                    {name}
+                  </span>
+                ))}
+              </div>
             </div>
           </section>
 
-          <Heatmap cells={data.cells} metric={metric} metricFormat={metricDef.format} />
+          <section>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 24 }}>
+              {DAY_ORDER.map((dow) => (
+                <DayChart key={dow} dayOfWeek={dow} cells={cellsByDay.get(dow) ?? []} metric={metric} metricLabel={metricDef.label} />
+              ))}
+            </div>
+          </section>
 
           {DAY_ORDER.map((dow) => (
             <DayPanel
@@ -329,18 +330,7 @@ export function SalesByHourPage() {
               sampleSize={data.sampleSizeByDayOfWeek[dow] ?? 0}
               metric={metric}
               metricFormat={metricDef.format}
-              splitHour={splitHourByDay[dow] ?? 15}
-              onSplitHourChange={(h) => setSplitHourByDay((prev) => ({ ...prev, [dow]: h }))}
               threshold={threshold}
-              isBrunchDay={brunchDays.has(dow)}
-              onToggleBrunch={() =>
-                setBrunchDays((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(dow)) next.delete(dow);
-                  else next.add(dow);
-                  return next;
-                })
-              }
             />
           ))}
         </>
