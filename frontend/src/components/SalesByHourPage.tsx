@@ -6,6 +6,8 @@ const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const WEEKEND_DAYS = new Set([0, 6]); // Sun, Sat -- default brunch days, adjustable per-day below
+const HEATMAP_START_HOUR = 10; // 10 AM
+const HEATMAP_END_HOUR = 23; // 11 PM-midnight slot -- the heatmap's focus window
 
 type Metric = "avgNetSales" | "avgOrderCount" | "avgCovers";
 const METRICS: { key: Metric; label: string; format: (n: number) => string }[] = [
@@ -182,19 +184,11 @@ function Heatmap({ cells, metric, metricFormat }: { cells: SalesByHourCell[]; me
   }, [cells]);
 
   const { hours, maxValue } = useMemo(() => {
-    let lo = 23;
-    let hi = 0;
+    const lo = HEATMAP_START_HOUR;
+    const hi = HEATMAP_END_HOUR;
     let max = 0;
     for (const c of cells) {
-      if (c[metric] > 0) {
-        lo = Math.min(lo, c.hour);
-        hi = Math.max(hi, c.hour);
-      }
-      max = Math.max(max, c[metric]);
-    }
-    if (lo > hi) {
-      lo = 6;
-      hi = 22;
+      if (c.hour >= lo && c.hour <= hi) max = Math.max(max, c[metric]);
     }
     return { hours: Array.from({ length: hi - lo + 1 }, (_, i) => lo + i), maxValue: max };
   }, [cells, metric]);
