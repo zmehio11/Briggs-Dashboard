@@ -23,7 +23,7 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
   const date = new Date(`${businessDate}T00:00:00Z`);
 
   await runSource("toast", async () => {
-    const { sales, items, flags, cashout, serverActivity } = await fetchDailyToastData(businessDate);
+    const { sales, items, flags, cashout, serverActivity, hourlySales } = await fetchDailyToastData(businessDate);
     await prisma.dailySales.upsert({
       where: { businessDate: date },
       create: {
@@ -141,7 +141,15 @@ export async function syncBusinessDate(businessDate: string): Promise<void> {
       serverRowsWritten += 1;
     }
 
-    return 1 + items.length + flags.length + 1 + serverRowsWritten;
+    for (const h of hourlySales) {
+      await prisma.dailyHourlySales.upsert({
+        where: { businessDate_hour: { businessDate: date, hour: h.hour } },
+        create: { businessDate: date, hour: h.hour, netSales: h.netSales, orderCount: h.orderCount, covers: h.covers },
+        update: { netSales: h.netSales, orderCount: h.orderCount, covers: h.covers },
+      });
+    }
+
+    return 1 + items.length + flags.length + 1 + serverRowsWritten + hourlySales.length;
   });
 
   await runSource("push_tip_hours", async () => {

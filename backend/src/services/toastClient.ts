@@ -183,12 +183,37 @@ export interface ServerActivityResult {
   ccTips: number;
 }
 
+export interface HourlySalesResult {
+  hour: number; // 0-23, restaurant-local hour
+  netSales: number;
+  orderCount: number;
+  covers: number;
+}
+
 export interface DailyToastData {
   sales: DailySalesResult;
   items: ItemSalesResult[];
   flags: TransactionFlagResult[];
   cashout: DailyCashoutResult;
   serverActivity: ServerActivityResult[];
+  hourlySales: HourlySalesResult[];
+}
+
+// Toast's own restaurantTimeZone for this account (also hardcoded for the
+// nightly cron schedule in index.ts) -- restaurants close late, so "hour of
+// day" only means something in local time, not the UTC timestamps Toast
+// actually returns.
+const RESTAURANT_TIMEZONE = "America/Denver";
+
+/** Converts a Toast UTC ISO timestamp to its restaurant-local hour (0-23). */
+function localHour(isoTimestamp: string): number {
+  const hourStr = new Intl.DateTimeFormat("en-US", {
+    timeZone: RESTAURANT_TIMEZONE,
+    hour: "2-digit",
+    hour12: false,
+  }).format(new Date(isoTimestamp));
+  // Some ICU builds render midnight as "24" rather than "00" with hour12:false.
+  return Number(hourStr) % 24;
 }
 
 /** Buckets a Toast sales-category name into the 6 categories the cashout sheet tracks. */
@@ -259,6 +284,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
   let cardPayments = 0;
   let otherPayments = 0;
   const serverActivity = new Map<string, ServerActivityResult>();
+  const hourlySales: HourlySalesResult[] = Array.from({ length: 24 }, (_, hour) => ({ hour, netSales: 0, orderCount: 0, covers: 0 }));
 
   for (const guid of orderGuids) {
     const { data: order } = await axios.get(`${env.toast.baseUrl}/orders/v2/orders/${guid}`, {
@@ -319,6 +345,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
       // Payments: cash/card totals (amount + tip = what the guest was
       // actually charged), CC tips, and per-server net sales/tips.
       const checkNetSales = (check.amount ?? 0) - checkDiscounts - checkRefunds;
+      if (check.openedDate) hourlySales[localHour(check.openedDate)].netSales += checkNetSales;
       const paymentAmountSum = (check.payments ?? []).reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
       for (const payment of check.payments ?? []) {
         const paidAmount = payment.amount ?? 0;
@@ -391,6 +418,11 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
       // order here rather than inside the per-check loop above -- a split
       // check would otherwise double-count the same table's guests.
       covers += order.numberOfGuests ?? 0;
+      if (order.openedDate) {
+        const bucket = hourlySales[localHour(order.openedDate)];
+        bucket.orderCount += 1;
+        bucket.covers += order.numberOfGuests ?? 0;
+      }
     }
   }
 
@@ -426,6 +458,7 @@ export async function fetchDailyToastData(businessDate: string): Promise<DailyTo
       otherPayments: round2(otherPayments),
     },
     serverActivity: Array.from(serverActivity.values()).map((s) => ({ ...s, netSales: round2(s.netSales), ccTips: round2(s.ccTips) })),
+    hourlySales: hourlySales.map((h) => ({ ...h, netSales: round2(h.netSales) })),
   };
 }
 
