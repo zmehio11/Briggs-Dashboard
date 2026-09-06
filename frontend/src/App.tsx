@@ -16,6 +16,7 @@ import { FlagsPage } from "./components/FlagsPage";
 import { LaborPage } from "./components/LaborPage";
 import { ExpensesPage } from "./components/ExpensesPage";
 import { CashoutPage } from "./components/CashoutPage";
+import { SalesByHourPage } from "./components/SalesByHourPage";
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "weekly", label: "Weekly" },
@@ -29,10 +30,11 @@ const PAGES: { key: Page; label: string }[] = [
   { key: "labor", label: "Labour" },
   { key: "expenses", label: "Expenses" },
   { key: "cashout", label: "Cashout" },
+  { key: "salesByHour", label: "Sales by Hour" },
   { key: "flags", label: "Sales Analysis" },
 ];
 
-type Page = "dashboard" | "items" | "labor" | "expenses" | "cashout" | "flags";
+type Page = "dashboard" | "items" | "labor" | "expenses" | "cashout" | "salesByHour" | "flags";
 
 // Common industry targets; adjust once Briggs' own budget is set.
 const TARGETS = { labor: 30, cogs: 30, prime: 60, opex: 20 };
@@ -86,6 +88,7 @@ export default function App() {
       {page === "labor" && <LaborPage />}
       {page === "expenses" && <ExpensesPage />}
       {page === "cashout" && <CashoutPage />}
+      {page === "salesByHour" && <SalesByHourPage />}
       {page === "flags" && <FlagsPage />}
 
       {page === "dashboard" && (

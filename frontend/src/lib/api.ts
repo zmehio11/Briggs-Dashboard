@@ -351,3 +351,26 @@ export async function deleteServerTipsOverride(businessDate: string, employeeGui
   });
   if (!res.ok && res.status !== 404) throw new Error(`Delete override failed: ${res.status}`);
 }
+
+export interface SalesByHourCell {
+  dayOfWeek: number; // 0=Sun .. 6=Sat
+  hour: number; // 0-23, restaurant-local
+  avgNetSales: number;
+  avgOrderCount: number;
+  avgCovers: number;
+}
+
+export interface SalesByHourResponse {
+  cells: SalesByHourCell[];
+  sampleSizeByDayOfWeek: Record<number, number>;
+}
+
+export async function fetchSalesByHour(start?: string, end?: string): Promise<SalesByHourResponse> {
+  const params = new URLSearchParams();
+  if (start) params.set("start", start);
+  if (end) params.set("end", end);
+  const qs = params.toString();
+  const res = await fetch(`/api/sales-by-hour${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error(`Sales by hour fetch failed: ${res.status}`);
+  return res.json();
+}
