@@ -42,11 +42,12 @@ syncNowRouter.get("/log", async (req, res) => {
 // GET /api/sync-now/debug -- raw row counts + a sample, to isolate a
 // write-side vs. query-side bug when the cashout endpoint returns empty.
 syncNowRouter.get("/debug", async (_req, res) => {
-  const [cashoutCount, serverTipsCount, hoursCount, cashoutSample] = await Promise.all([
+  const [cashoutCount, serverTipsCount, hoursCount, hourlySalesCount, cashoutSample] = await Promise.all([
     prisma.dailyCashout.count(),
     prisma.dailyServerTips.count(),
     prisma.dailyEmployeeTipHours.count(),
+    prisma.dailyHourlySales.count(),
     prisma.dailyCashout.findMany({ take: 3 }),
   ]);
-  res.json({ cashoutCount, serverTipsCount, hoursCount, cashoutSample });
+  res.json({ cashoutCount, serverTipsCount, hoursCount, hourlySalesCount, cashoutSample });
 });
