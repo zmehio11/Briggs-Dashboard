@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -45,10 +45,16 @@ export default function App() {
   const [buckets, setBuckets] = useState<Bucket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [dailyCache, setDailyCache] = useState<Record<string, Bucket[]>>({});
+  const [dailyLoadingKey, setDailyLoadingKey] = useState<string | null>(null);
+  const [dailyErrorKey, setDailyErrorKey] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
+    setExpandedKey(null);
+    setDailyCache({});
     fetchDashboard(period)
       .then(setBuckets)
       .catch((e) => setError(String(e.message ?? e)))
@@ -57,6 +63,44 @@ export default function App() {
 
   const latest = buckets[buckets.length - 1];
   const currency = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+  async function toggleExpand(b: Bucket) {
+    if (expandedKey === b.key) {
+      setExpandedKey(null);
+      return;
+    }
+    setExpandedKey(b.key);
+    if (dailyCache[b.key]) return;
+    setDailyLoadingKey(b.key);
+    setDailyErrorKey(null);
+    try {
+      const daily = await fetchDashboard("daily", b.start, b.end);
+      setDailyCache((prev) => ({ ...prev, [b.key]: daily }));
+    } catch (e) {
+      setDailyErrorKey(b.key);
+    } finally {
+      setDailyLoadingKey(null);
+    }
+  }
+
+  function BucketCells({ b }: { b: Bucket }) {
+    return (
+      <>
+        <td>{currency(b.netSales)}</td>
+        <td>{b.budgetRevenue == null ? "—" : currency(b.budgetRevenue)}</td>
+        <td>{currency(b.laborCost)}</td>
+        <td>{b.laborPct == null ? "—" : `${b.laborPct.toFixed(1)}%`}</td>
+        <td>{b.budgetLaborPct == null ? "—" : `${b.budgetLaborPct.toFixed(1)}%`}</td>
+        <td>{currency(b.cogs)}</td>
+        <td>{b.cogsPct == null ? "—" : `${b.cogsPct.toFixed(1)}%`}</td>
+        <td>{b.budgetCogsPct == null ? "—" : `${b.budgetCogsPct.toFixed(1)}%`}</td>
+        <td>{b.primeCostPct == null ? "—" : `${b.primeCostPct.toFixed(1)}%`}</td>
+        <td>{b.budgetPrimeCostPct == null ? "—" : `${b.budgetPrimeCostPct.toFixed(1)}%`}</td>
+        <td>{b.opexPct == null ? "—" : `${b.opexPct.toFixed(1)}%`}</td>
+        <td>{b.orderCount}</td>
+      </>
+    );
+  }
 
   return (
     <div className="page">
@@ -160,6 +204,9 @@ export default function App() {
       {buckets.length > 0 && (
         <section className="table-card">
           <h2>By Period</h2>
+          <p className="subtext" style={{ margin: "-4px 0 12px" }}>
+            Click a row to drill down into its day-by-day breakdown.
+          </p>
           <div className="table-scroll">
             <table>
               <thead>
@@ -180,23 +227,43 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {[...buckets].reverse().map((b) => (
-                  <tr key={b.key}>
-                    <td>{b.label}</td>
-                    <td>{currency(b.netSales)}</td>
-                    <td>{b.budgetRevenue == null ? "—" : currency(b.budgetRevenue)}</td>
-                    <td>{currency(b.laborCost)}</td>
-                    <td>{b.laborPct == null ? "—" : `${b.laborPct.toFixed(1)}%`}</td>
-                    <td>{b.budgetLaborPct == null ? "—" : `${b.budgetLaborPct.toFixed(1)}%`}</td>
-                    <td>{currency(b.cogs)}</td>
-                    <td>{b.cogsPct == null ? "—" : `${b.cogsPct.toFixed(1)}%`}</td>
-                    <td>{b.budgetCogsPct == null ? "—" : `${b.budgetCogsPct.toFixed(1)}%`}</td>
-                    <td>{b.primeCostPct == null ? "—" : `${b.primeCostPct.toFixed(1)}%`}</td>
-                    <td>{b.budgetPrimeCostPct == null ? "—" : `${b.budgetPrimeCostPct.toFixed(1)}%`}</td>
-                    <td>{b.opexPct == null ? "—" : `${b.opexPct.toFixed(1)}%`}</td>
-                    <td>{b.orderCount}</td>
-                  </tr>
-                ))}
+                {[...buckets].reverse().map((b) => {
+                  const isExpanded = expandedKey === b.key;
+                  return (
+                    <Fragment key={b.key}>
+                      <tr onClick={() => toggleExpand(b)} style={{ cursor: "pointer" }}>
+                        <td>
+                          <span className="subtext" style={{ display: "inline-block", width: 14 }}>
+                            {isExpanded ? "▾" : "▸"}
+                          </span>
+                          {b.label}
+                        </td>
+                        <BucketCells b={b} />
+                      </tr>
+                      {isExpanded && dailyLoadingKey === b.key && (
+                        <tr>
+                          <td colSpan={13} className="subtext">
+                            Loading days…
+                          </td>
+                        </tr>
+                      )}
+                      {isExpanded && dailyErrorKey === b.key && (
+                        <tr>
+                          <td colSpan={13} className="subtext">
+                            Couldn't load the daily breakdown for this period.
+                          </td>
+                        </tr>
+                      )}
+                      {isExpanded &&
+                        dailyCache[b.key]?.map((d) => (
+                          <tr key={d.key} style={{ background: "var(--surface-2)" }}>
+                            <td style={{ paddingLeft: 30 }}>{d.label}</td>
+                            <BucketCells b={d} />
+                          </tr>
+                        ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

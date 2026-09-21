@@ -1,8 +1,10 @@
-export type Period = "weekly" | "monthly" | "yearly";
+export type Period = "weekly" | "monthly" | "yearly" | "daily";
 
 export interface Bucket {
   key: string;
   label: string;
+  start: string;
+  end: string;
   netSales: number;
   grossSales: number;
   laborCost: number;
@@ -21,8 +23,11 @@ export interface Bucket {
   opexPct: number | null;
 }
 
-export async function fetchDashboard(period: Period): Promise<Bucket[]> {
-  const res = await fetch(`/api/dashboard?period=${period}`);
+export async function fetchDashboard(period: Period, start?: string, end?: string): Promise<Bucket[]> {
+  const params = new URLSearchParams({ period });
+  if (start) params.set("start", start);
+  if (end) params.set("end", end);
+  const res = await fetch(`/api/dashboard?${params.toString()}`);
   if (!res.ok) throw new Error(`Dashboard fetch failed: ${res.status}`);
   const data = await res.json();
   return data.buckets;

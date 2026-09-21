@@ -14,9 +14,12 @@ import { prisma } from "../lib/prisma.js";
 
 export const dashboardRouter = Router();
 
-type Period = "weekly" | "monthly" | "yearly";
+type Period = "weekly" | "monthly" | "yearly" | "daily";
 
 function bucketKey(date: Date, period: Period): { key: string; label: string; start: Date; end: Date } {
+  if (period === "daily") {
+    return { key: format(date, "yyyy-MM-dd"), label: format(date, "EEE, MMM d, yyyy"), start: date, end: date };
+  }
   if (period === "weekly") {
     const start = startOfISOWeek(date);
     const end = endOfISOWeek(date);
@@ -100,11 +103,15 @@ function opexForRange(monthlyTotals: Map<string, number>, start: Date, end: Date
 }
 
 /**
- * GET /api/dashboard?period=weekly|monthly|yearly&start=YYYY-MM-DD&end=YYYY-MM-DD
+ * GET /api/dashboard?period=weekly|monthly|yearly|daily&start=YYYY-MM-DD&end=YYYY-MM-DD
  *
  * Returns period buckets with sales, labor cost, COGS, the derived ratios
  * (labor %, COGS %, prime cost %), and — where a budget has been imported —
  * the same figures prorated from the monthly operating budget for comparison.
+ * `daily` is the same computation at one-day granularity -- used by the
+ * frontend's By Period table to drill a clicked week/month/year down into
+ * its individual days, by re-calling this endpoint with that bucket's own
+ * start/end and period=daily.
  */
 dashboardRouter.get("/", async (req, res) => {
   const period = (req.query.period as Period) ?? "weekly";
@@ -179,6 +186,8 @@ dashboardRouter.get("/", async (req, res) => {
       return {
         key: b.key,
         label: b.label,
+        start: format(b.start, "yyyy-MM-dd"),
+        end: format(b.end, "yyyy-MM-dd"),
         netSales: b.netSales,
         grossSales: b.grossSales,
         laborCost: b.laborCost,
